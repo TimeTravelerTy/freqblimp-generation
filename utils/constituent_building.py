@@ -6,15 +6,56 @@
 from utils.vocab_table import *
 from utils.conjugate import *
 from utils.data_type import data_type
-from random import choice
+from utils.randomize import choice, get_active_policy
 from utils.string_utils import remove_extra_whitespace
 import numpy as np
 import random
 from utils.vocab_sets import *
-from nltk.stem import WordNetLemmatizer
 from utils.exceptions import *
 
+try:
+    from nltk.stem import WordNetLemmatizer
+except Exception:
+    class WordNetLemmatizer:  # pragma: no cover - fallback for environments without nltk
+        def lemmatize(self, word, pos="n"):
+            if pos != "v":
+                return word
+            if word.endswith("ies") and len(word) > 3:
+                return word[:-3] + "y"
+            if word.endswith("ing") and len(word) > 4:
+                stem = word[:-3]
+                if len(stem) >= 2 and stem[-1] == stem[-2]:
+                    stem = stem[:-1]
+                return stem
+            if word.endswith("ed") and len(word) > 3:
+                stem = word[:-2]
+                if stem.endswith("i"):
+                    return stem[:-1] + "y"
+                if len(stem) >= 2 and stem[-1] == stem[-2]:
+                    stem = stem[:-1]
+                return stem
+            if word.endswith("s") and len(word) > 3:
+                if word.endswith("es") and len(word) > 4:
+                    return word[:-2]
+                return word[:-1]
+            return word
+
 lemmatizer = WordNetLemmatizer()
+
+
+def _policy_controls(controlled_pos):
+    policy = get_active_policy()
+    if policy is None:
+        return False
+    return controlled_pos in set(policy.controlled_pos)
+
+
+def _content_sample_space(frequent, controlled_pos):
+    if not frequent:
+        return vocab
+    if _policy_controls(controlled_pos):
+        return vocab
+    return get_all("frequent", "1")
 
 def verb_phrase_from_subj(subject, frequent=True, allow_negated=True):
     verb = choice(get_matched_by(subject, "arg_1", all_verbs))
@@ -35,14 +76,11 @@ def verb_args_from_verb(verb, frequent=True, subj=None, aux=None, allow_negated=
     :return: dict of all arguments of verb: {subject:x1, auxiliary:x2, verb:x3, args:[arg_1, arg_2, ..., arg_n]}
     """
     args = {"verb": verb}
-    if frequent:
-        freq_vocab = get_all("frequent", "1")
-    else:
-        freq_vocab = vocab
+    noun_vocab = _content_sample_space(frequent, "noun")
 
     # all verbs have a subject
     if subj is None:
-        subj = N_to_DP_mutate(choice(get_matches_of(verb, "arg_1", get_all("category", "N", freq_vocab))), allow_quantifiers=allow_quantifiers)
+        subj = N_to_DP_mutate(choice(get_matches_of(verb, "arg_1", get_all("category", "N", noun_vocab))), allow_quantifiers=allow_quantifiers)
     args["subj"] = subj
 
     # all verbs have an auxiliary (or null)
@@ -57,11 +95,11 @@ def verb_args_from_verb(verb, frequent=True, subj=None, aux=None, allow_negated=
 
     # TRANSITIVE
     if verb["category"] == "(S\\NP)/NP":
-        args["args"] = [N_to_DP_mutate(choice(get_matches_of(verb, "arg_2", get_all("category", "N", freq_vocab))), allow_quantifiers=allow_quantifiers)]
+        args["args"] = [N_to_DP_mutate(choice(get_matches_of(verb, "arg_2", get_all("category", "N", noun_vocab))), allow_quantifiers=allow_quantifiers)]
 
     # FROM-ING EMBEDDING
     if verb["category"] == "(S\\NP)/(S[from]\\NP)":
-        obj = N_to_DP_mutate(choice(get_matches_of(verb, "arg_2", freq_vocab)), allow_quantifiers=allow_quantifiers)
+        obj = N_to_DP_mutate(choice(get_matches_of(verb, "arg_2", noun_vocab)), allow_quantifiers=allow_quantifiers)
         if allow_recursion:
             VP = V_to_VP_mutate(choice(get_matched_by(obj, "arg_1", all_ing_verbs)), frequent=frequent, aux=False)
         else:
@@ -143,14 +181,11 @@ def pred_args_from_pred(pred, frequent=True, subj=None, allow_negated=True):
     :return: dict of all arguments of verb: {subject:x1, auxiliary:x2, copula:x3, pred:x4, args:[arg_1, arg_2, ..., arg_n]}
     """
     args = {"pred": pred}
-    if frequent:
-        freq_vocab = get_all("frequent", "1")
-    else:
-        freq_vocab = vocab
+    noun_vocab = _content_sample_space(frequent, "noun")
 
     # all verbs have a subject
     if subj is None:
-        args["subj"] = N_to_DP_mutate(choice(get_matches_of(pred, "arg_1", get_all("category", "N", freq_vocab))))
+        args["subj"] = N_to_DP_mutate(choice(get_matches_of(pred, "arg_1", get_all("category", "N", noun_vocab))))
     else:
         args["subj"] = subj
 
@@ -261,16 +296,15 @@ def noun_args_from_noun(noun, frequent=True, allow_recursion=False, allow_quanti
     :return: a dict containing all the arguments of the noun: {det: x1, args: [arg_1, ..., arg_n]}
     """
     args = {}
-    if frequent:
-        sample_space = all_frequent
-    else:
-        sample_space = vocab
+    determiner_space = all_frequent if frequent else vocab
+    noun_space = _content_sample_space(frequent, "noun")
     if avoid is not None:
-        sample_space = np.setdiff1d(sample_space, avoid)
+        noun_space = np.setdiff1d(noun_space, avoid)
+        determiner_space = np.setdiff1d(determiner_space, avoid)
     if allow_quantifiers:
-        args["det"] = choice(get_matched_by(noun, "arg_1", np.intersect1d(all_determiners, sample_space)))
+        args["det"] = choice(get_matched_by(noun, "arg_1", np.intersect1d(all_determiners, determiner_space)))
     else:
-        args["det"] = choice(get_matched_by(noun, "arg_1", get_all("quantifier", "0", np.intersect1d(all_determiners, sample_space))))
+        args["det"] = choice(get_matched_by(noun, "arg_1", get_all("quantifier", "0", np.intersect1d(all_determiners, determiner_space))))
     if noun["category"] == "N":
         args["args"] = []
     if noun["category"] == "NP":
@@ -278,15 +312,15 @@ def noun_args_from_noun(noun, frequent=True, allow_recursion=False, allow_quanti
         args["args"] = []
     if noun["category"] == "N/NP":
         if allow_recursion:
-            obj = N_to_DP_mutate(choice(get_matches_of(noun, "arg_1", np.intersect1d(all_nominals, sample_space))))
+            obj = N_to_DP_mutate(choice(get_matches_of(noun, "arg_1", np.intersect1d(all_nominals, noun_space))))
         else:
-            obj = N_to_DP_mutate(choice(get_matches_of(noun, "arg_1", np.intersect1d(all_nouns, sample_space))))
+            obj = N_to_DP_mutate(choice(get_matches_of(noun, "arg_1", np.intersect1d(all_nouns, noun_space))))
         args["args"] = [obj]
     if noun["category"] == "N\\NP[poss]":
         if allow_recursion:
-            poss = make_possessive(N_to_DP_mutate(choice(get_matches_of(noun, "arg_1", np.intersect1d(all_nominals, sample_space)))))
+            poss = make_possessive(N_to_DP_mutate(choice(get_matches_of(noun, "arg_1", np.intersect1d(all_nominals, noun_space)))))
         else:
-            poss = make_possessive(N_to_DP_mutate(choice(get_matches_of(noun, "arg_1", np.intersect1d(all_nouns, sample_space)))))
+            poss = make_possessive(N_to_DP_mutate(choice(get_matches_of(noun, "arg_1", np.intersect1d(all_nouns, noun_space)))))
         args["det"] = poss
         args["args"] = []
     if noun["category"] == "N/S":
@@ -568,5 +602,3 @@ def build_locative(locale, allow_quantifiers=True, avoid=None, bind_det=False):
         raise FieldAbsentError("Item %s is missing field \"locative_prepositions\"." % (locale[0]))
     locale[0] = random.choice(locale["locative_prepositions"].split(";")) + " " + locale[0]
     return locale
-
-

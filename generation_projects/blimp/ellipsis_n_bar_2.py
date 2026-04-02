@@ -84,5 +84,15 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
             "sentence_bad": "%s %s %s %s %s %s and %s %s %s %s %s." % (Subj1[0], Aux1[0], V[0], D1, Adj1[0], Obj[0], Subj2[0], Aux2[0], V[0], D2, Adj2[0]),        }
         return data, data["sentence_good"]
 
-generator = AgreementGenerator()
-generator.generate_paradigm(rel_output_path="outputs/blimp/%s.jsonl" % generator.uid)
+
+def build_generator():
+    return AgreementGenerator()
+
+
+def main():
+    generator = build_generator()
+    generator.generate_paradigm(rel_output_path="outputs/blimp/%s.jsonl" % generator.uid)
+
+
+if __name__ == "__main__":
+    main()

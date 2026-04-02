@@ -33,17 +33,15 @@ class AnaphorGenerator(data_generator.BenchmarkGenerator):
         }
         return data, data["sentence_good"]
 
-generator = AnaphorGenerator()
-generator.generate_paradigm(rel_output_path="outputs/blimp/%s.jsonl" % generator.uid)
+
+def build_generator():
+    return AnaphorGenerator()
 
 
+def main():
+    generator = build_generator()
+    generator.generate_paradigm(rel_output_path="outputs/blimp/%s.jsonl" % generator.uid)
 
 
-
-
-
-
-
-
-
-
+if __name__ == "__main__":
+    main()

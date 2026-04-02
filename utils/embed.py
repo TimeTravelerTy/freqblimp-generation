@@ -1,6 +1,7 @@
-from random import choice
+import random
 from utils.vocab_sets import *
 from utils.constituent_building import *
+from utils.randomize import choice
 
 
 def embed_in_question(sentence):
@@ -73,5 +74,4 @@ def embed_in_conditional(sentence):
         return "%s %s, %s." % (conditional, sentence, consequent)
     else:
         return "%s %s %s." % (consequent, conditional, sentence)
-
 

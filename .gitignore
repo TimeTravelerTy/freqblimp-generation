@@ -1,4 +1,6 @@
 .DS_Store
+CODEX_README.md
+logs/
 outputs/inductive_biases
 .idea/
 View_Vocab.xlsx

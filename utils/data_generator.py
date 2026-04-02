@@ -1,13 +1,15 @@
 from utils.conjugate import *
 from utils.string_utils import string_beautify
 from utils.exceptions import *
+from utils.frequency import trace_events_for_sentence, trace_zipf_aggregates
 # from random import choice
 from functools import reduce
 import numpy as np
-from utils.randomize import choice
+from utils.randomize import begin_record_trace, consume_record_trace, get_active_policy_summary
 import jsonlines
 import logging
 import datetime
+import os
 import traceback
 
 
@@ -69,15 +71,16 @@ class Generator:
         else:
             raise Exception("You need to give an output path")
         past_sentences = set()
-        generated_data = []
         pairID = 0
         error_counter = 0
         constant_data = self.make_metadata_dict()
+        constant_data.update(get_active_policy_summary())
         print("Generating data for " + constant_data["UID"])
         self.make_logger(constant_data)
         output_writer = jsonlines.Writer(output, flush=True)
         while len(past_sentences) < number_to_generate:
             try:
+                begin_record_trace()
                 new_data, track_sentence = self.sample()
                 if track_sentence not in past_sentences:
                     past_sentences.add(track_sentence)
@@ -85,6 +88,20 @@ class Generator:
                         if field in new_data:
                             new_data[field] = string_beautify(new_data[field])
                             new_data.update(constant_data)
+                    trace_events = consume_record_trace()
+                    if trace_events:
+                        good_trace = trace_events_for_sentence(
+                            new_data.get("sentence_good", ""),
+                            trace_events,
+                        )
+                        bad_trace = trace_events_for_sentence(
+                            new_data.get("sentence_bad", ""),
+                            trace_events,
+                        )
+                        new_data["good_frequency_trace"] = good_trace
+                        new_data["bad_frequency_trace"] = bad_trace
+                        new_data["good_frequency_aggregates"] = trace_zipf_aggregates(good_trace)
+                        new_data["bad_frequency_aggregates"] = trace_zipf_aggregates(bad_trace)
                     new_data["pairID"] = str(pairID)
                     pairID += 1
                     if pairID % 100 == 0:
@@ -92,12 +109,16 @@ class Generator:
                     output_writer.write(new_data)
             except Exception as e:
                 self.log_exception(e)
-                print(self.get_stack_trace(e))
+                if not isinstance(e, FrequencyConstraintError):
+                    print(self.get_stack_trace(e))
                 error_counter += 1
-                if error_counter > number_to_generate // 5:
-                    pass
-                    # raise Exception("Over 20\% of samples result in errors. You should fix this.")
-        jsonlines.Writer(output).write_all(generated_data)
+                failure_limit = max(10, number_to_generate // 5)
+                if error_counter > failure_limit:
+                    raise Exception(
+                        "Over 20%% of samples failed for %s. Last error: %s"
+                        % (constant_data["UID"], getattr(e, "msg", str(e)))
+                    )
+        output_writer.close()
 
 
 class BenchmarkGenerator(Generator):

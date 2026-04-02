@@ -6,7 +6,7 @@ import numpy as np
 #
 
 # NOUNS
-all_nouns = get_all_conjunctive([("category", "N"), ("frequent", "1")])
+all_nouns = get_all("category", "N")
 all_singular_nouns = get_all("sg", "1", all_nouns)
 all_singular_count_nouns = get_all("mass", "0", all_singular_nouns)
 all_animate_nouns = get_all("animate", "1", all_nouns)
@@ -15,11 +15,11 @@ all_documents = get_all_conjunctive([("category", "N"), ("document", "1")])
 all_gendered_nouns = np.union1d(get_all("gender", "m"), get_all("gender", "f"))
 all_singular_neuter_animate_nouns = get_all_conjunctive(
     [("category", "N"), ("sg", "1"), ("animate", "1"), ("gender", "n")])
-all_plural_nouns = get_all_conjunctive([("category", "N"), ("frequent", "1"), ("pl", "1")])
+all_plural_nouns = get_all_conjunctive([("category", "N"), ("pl", "1")])
 all_plural_animate_nouns = np.intersect1d(all_animate_nouns, all_plural_nouns)
 all_common_nouns = get_all_conjunctive([("category", "N"), ("properNoun", "0")])
 all_relational_nouns = get_all("category", "N/NP")
-all_nominals = get_all_conjunctive([("noun", "1"), ("frequent", "1")])
+all_nominals = get_all("noun", "1")
 all_relational_poss_nouns = get_all("category", "N\\NP[poss]")
 all_proper_names = get_all("properNoun", "1")
 
@@ -33,11 +33,11 @@ all_non_finite_verbs = get_all("finite", "0", all_verbs)
 all_ing_verbs = get_all("ing", "1", all_verbs)
 all_en_verbs = get_all("en", "1", all_verbs)
 all_bare_verbs = get_all("bare", "1", all_verbs)
-all_anim_anim_verbs = get_matched_by(choice(all_animate_nouns), "arg_1",
-                                          get_matched_by(choice(all_animate_nouns), "arg_2",
+all_anim_anim_verbs = get_matched_by(uniform_choice(all_animate_nouns), "arg_1",
+                                          get_matched_by(uniform_choice(all_animate_nouns), "arg_2",
                                                          all_transitive_verbs))
-all_doc_doc_verbs = get_matched_by(choice(all_documents), "arg_1",
-                                        get_matched_by(choice(all_documents), "arg_2", all_transitive_verbs))
+all_doc_doc_verbs = get_matched_by(uniform_choice(all_documents), "arg_1",
+                                        get_matched_by(uniform_choice(all_documents), "arg_2", all_transitive_verbs))
 all_refl_nonverbal_predicates = np.extract([x["arg_1"] == x["arg_2"] for x in get_all("category_2", "Pred")],
                                                 get_all("category_2", "Pred"))
 all_refl_preds = reduce(np.union1d, (all_anim_anim_verbs, all_doc_doc_verbs))

@@ -26,12 +26,12 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
 
         V1 = choice(self.all_anim_subj_verbs)
         N1_good = N_to_DP_mutate(choice(get_matches_of(V1, "arg_1", all_nouns)))
-           if N1_good['sg'] == '1':
-               N1_bad = N_to_DP_mutate(choice(get_all('sg', '1', all_inanimate_nouns)))
-           elif N1_good['pl'] == '1':
-               N1_bad = N_to_DP_mutate(choice(get_all('pl', '1', all_inanimate_nouns)))
-           else:
-               pass
+        if N1_good['sg'] == '1':
+            N1_bad = N_to_DP_mutate(choice(get_all('sg', '1', all_inanimate_nouns)))
+        elif N1_good['pl'] == '1':
+            N1_bad = N_to_DP_mutate(choice(get_all('pl', '1', all_inanimate_nouns)))
+        else:
+            raise ValueError("Subject must be singular or plural.")
         N2 = N_to_DP_mutate(choice(get_matches_of(V1, "arg_2", all_nouns)))
         V1 = conjugate(V1, N1_good)
 
@@ -44,5 +44,15 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
         }
         return data, data["sentence_good"]
 
-generator = AgreementGenerator()
-generator.generate_paradigm(rel_output_path="outputs/blimp/%s.jsonl" % generator.uid)
+
+def build_generator():
+    return AgreementGenerator()
+
+
+def main():
+    generator = build_generator()
+    generator.generate_paradigm(rel_output_path="outputs/blimp/%s.jsonl" % generator.uid)
+
+
+if __name__ == "__main__":
+    main()

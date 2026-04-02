@@ -38,5 +38,15 @@ class Generator(data_generator.BenchmarkGenerator):
         }
         return data, data["sentence_good"]
 
-generator = Generator()
-generator.generate_paradigm(rel_output_path="outputs/blimp/%s.jsonl" % generator.uid)
+
+def build_generator():
+    return Generator()
+
+
+def main():
+    generator = build_generator()
+    generator.generate_paradigm(rel_output_path="outputs/blimp/%s.jsonl" % generator.uid)
+
+
+if __name__ == "__main__":
+    main()

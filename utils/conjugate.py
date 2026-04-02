@@ -1,5 +1,5 @@
 from utils.vocab_table import *
-from random import choice
+from utils.randomize import choice
 from utils.vocab_sets import *
 
 def conjugate(verb, subj, allow_negated=True, require_negated=False, change_v_form=False):
