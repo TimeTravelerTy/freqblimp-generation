@@ -1,6 +1,8 @@
 from utils.vocab_table import *
-from utils.randomize import choice
+from utils.randomize import choice, get_active_policy, uniform_choice
 from utils.vocab_sets import *
+from utils.exceptions import FrequencyConstraintError
+from utils.frequency import coerce_float
 
 def conjugate(verb, subj, allow_negated=True, require_negated=False, change_v_form=False):
     """
@@ -138,10 +140,34 @@ def get_mismatch_verb(verb):
     """
     if verb["pres"] == "1":
         verb_root = get_all("root", verb["root"])
+        mismatch_candidates = None
         if verb["3sg"] == "1":
-            return choice(get_all("pres", "1", get_all("3sg", "0", verb_root)))
+            mismatch_candidates = get_all("pres", "1", get_all("3sg", "0", verb_root))
         else:
-            return choice(get_all("pres", "1", get_all("3sg", "1", verb_root)))
+            mismatch_candidates = get_all("pres", "1", get_all("3sg", "1", verb_root))
+        if len(mismatch_candidates) == 0:
+            raise FrequencyConstraintError("No mismatch verb candidates available for root %s" % verb["root"])
+        policy = get_active_policy()
+        if policy is None or "verb" not in policy.controlled_pos_set:
+            return uniform_choice(mismatch_candidates)
+        lower, upper = policy.bounds_for("verb")
+        if lower is None and upper is None:
+            return uniform_choice(mismatch_candidates)
+        frequency = get_row_frequency(mismatch_candidates[0])
+        zipf_lemma = coerce_float(frequency.get("zipf_lemma"))
+        if zipf_lemma is None:
+            zipf_lemma = coerce_float(frequency.get("zipf_expression")) or 0.0
+        if lower is not None and zipf_lemma < lower:
+            raise FrequencyConstraintError(
+                "Mismatch verb lemma %s has zipf=%s below min=%s"
+                % (frequency.get("lemma_expression", mismatch_candidates[0]["expression"]), zipf_lemma, lower)
+            )
+        if upper is not None and zipf_lemma > upper:
+            raise FrequencyConstraintError(
+                "Mismatch verb lemma %s has zipf=%s above max=%s"
+                % (frequency.get("lemma_expression", mismatch_candidates[0]["expression"]), zipf_lemma, upper)
+            )
+        return uniform_choice(mismatch_candidates)
     else:
         raise ValueError("Verb should be present tense.")
 

@@ -105,15 +105,50 @@ def sentence_contains_expression(sentence: str, expression: str) -> bool:
     return False
 
 
+def find_expression_span(tokens: Sequence[str],
+                         expression: str,
+                         used_ranges: Optional[Sequence[range]]=None) -> Optional[Dict[str, object]]:
+    expr_tokens = normalize_sentence_tokens(expression)
+    if not expr_tokens:
+        return None
+    width = len(expr_tokens)
+    blocked = list(used_ranges or [])
+    for idx in range(0, len(tokens) - width + 1):
+        if tokens[idx:idx + width] != expr_tokens:
+            continue
+        current = range(idx, idx + width)
+        if any(set(current).intersection(existing) for existing in blocked):
+            continue
+        return {
+            "start": idx,
+            "end": idx + width,
+            "text": " ".join(tokens[idx:idx + width]),
+        }
+    return None
+
+
 def trace_events_for_sentence(sentence: str,
                               events: Sequence[Dict[str, object]]) -> List[Dict[str, object]]:
+    sentence_tokens = normalize_sentence_tokens(sentence)
     matched = []
+    used_ranges = []
     for event in events:
         family_expressions = list(event.get("_match_expressions", ()))
         if not family_expressions and event.get("expression"):
             family_expressions = [str(event["expression"])]
-        if any(sentence_contains_expression(sentence, expr) for expr in family_expressions):
-            matched.append({key: value for key, value in dict(event).items() if not key.startswith("_")})
+        matched_span = None
+        for expression in family_expressions:
+            matched_span = find_expression_span(sentence_tokens, expression, used_ranges=used_ranges)
+            if matched_span is not None:
+                break
+        if matched_span is None:
+            continue
+        used_ranges.append(range(matched_span["start"], matched_span["end"]))
+        payload = {key: value for key, value in dict(event).items() if not key.startswith("_")}
+        payload["i"] = int(matched_span["start"]) + 1
+        payload["text"] = matched_span["text"]
+        matched.append(payload)
+    matched.sort(key=lambda entry: (entry.get("i", 0), entry.get("text", "")))
     return matched
 
 

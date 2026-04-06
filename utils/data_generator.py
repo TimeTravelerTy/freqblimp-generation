@@ -5,12 +5,48 @@ from utils.frequency import trace_events_for_sentence, trace_zipf_aggregates
 # from random import choice
 from functools import reduce
 import numpy as np
-from utils.randomize import begin_record_trace, consume_record_trace, get_active_policy_summary
+from utils.randomize import begin_record_trace, consume_record_trace, get_active_policy_summary, trace_recording_enabled
 import jsonlines
 import logging
 import datetime
+import json
 import os
+import time
 import traceback
+
+try:
+    from tqdm import tqdm
+except Exception:  # pragma: no cover - fallback when tqdm is unavailable
+    class tqdm:
+        def __init__(self, *args, **kwargs):
+            self.n = 0
+
+        def update(self, n=1):
+            self.n += n
+
+        def set_postfix(self, **kwargs):
+            return None
+
+        def close(self):
+            return None
+
+
+class _NullProgress:
+    def __init__(self):
+        self.n = 0
+
+    def update(self, n=1):
+        self.n += n
+
+    def set_postfix(self, **kwargs):
+        return None
+
+    def close(self):
+        return None
+
+
+def _progress_enabled():
+    return os.environ.get("FREQBLIMP_SHOW_PROGRESS", "1") != "0"
 
 
 class Generator:
@@ -52,6 +88,33 @@ class Generator:
     def get_stack_trace(self, e):
         return "".join(traceback.format_tb(e.__traceback__)) + str(e)
 
+    def _manifest_path(self, rel_output_path=None, absolute_path=None):
+        output_path = self._output_path(rel_output_path=rel_output_path, absolute_path=absolute_path)
+        if output_path is None:
+            return None
+        base, ext = os.path.splitext(output_path)
+        if ext == ".jsonl":
+            return base + ".manifest.json"
+        return output_path + ".manifest.json"
+
+    def _output_path(self, rel_output_path=None, absolute_path=None):
+        if rel_output_path is not None:
+            project_root = "/".join(os.path.join(os.path.dirname(os.path.abspath(__file__))).split("/")[:-1])
+            return os.path.join(project_root, rel_output_path)
+        elif absolute_path is not None:
+            return absolute_path
+        return None
+
+    def write_manifest(self, manifest_payload, rel_output_path=None, absolute_path=None):
+        manifest_path = self._manifest_path(rel_output_path=rel_output_path, absolute_path=absolute_path)
+        if manifest_path is None:
+            return
+        directory = os.path.dirname(manifest_path)
+        if directory and not os.path.exists(directory):
+            os.makedirs(directory, exist_ok=True)
+        with open(manifest_path, "w") as handle:
+            json.dump(manifest_payload, handle, indent=2, sort_keys=True)
+
     def generate_paradigm(self, number_to_generate=1000, rel_output_path=None, absolute_path=None):
         """
         Contains the main loop for generating a full dataset for a given paradigm.
@@ -74,21 +137,28 @@ class Generator:
         pairID = 0
         error_counter = 0
         constant_data = self.make_metadata_dict()
-        constant_data.update(get_active_policy_summary())
+        policy_summary = get_active_policy_summary()
+        started_at = datetime.datetime.now()
+        started_ts = time.time()
         print("Generating data for " + constant_data["UID"])
         self.make_logger(constant_data)
-        output_writer = jsonlines.Writer(output, flush=True)
+        output_writer = jsonlines.Writer(output, flush=False)
+        progress_enabled = _progress_enabled()
+        progress = tqdm(total=number_to_generate, desc=constant_data["UID"], unit="pair", dynamic_ncols=True) if progress_enabled else _NullProgress()
+        record_trace = trace_recording_enabled()
+        failure_limit = max(10, number_to_generate // 5)
         while len(past_sentences) < number_to_generate:
             try:
-                begin_record_trace()
+                if record_trace:
+                    begin_record_trace()
                 new_data, track_sentence = self.sample()
                 if track_sentence not in past_sentences:
                     past_sentences.add(track_sentence)
                     for field in self.data_fields:
                         if field in new_data:
                             new_data[field] = string_beautify(new_data[field])
-                            new_data.update(constant_data)
-                    trace_events = consume_record_trace()
+                    new_data.update(constant_data)
+                    trace_events = consume_record_trace() if record_trace else []
                     if trace_events:
                         good_trace = trace_events_for_sentence(
                             new_data.get("sentence_good", ""),
@@ -98,27 +168,55 @@ class Generator:
                             new_data.get("sentence_bad", ""),
                             trace_events,
                         )
-                        new_data["good_frequency_trace"] = good_trace
-                        new_data["bad_frequency_trace"] = bad_trace
-                        new_data["good_frequency_aggregates"] = trace_zipf_aggregates(good_trace)
-                        new_data["bad_frequency_aggregates"] = trace_zipf_aggregates(bad_trace)
+                        sample_meta = dict(new_data.get("meta", {}))
+                        sample_meta["good_choices"] = good_trace
+                        sample_meta["bad_choices"] = bad_trace
+                        sample_meta["zipf_aggregates"] = {
+                            "good": trace_zipf_aggregates(good_trace),
+                            "bad": trace_zipf_aggregates(bad_trace),
+                        }
+                        new_data["meta"] = sample_meta
                     new_data["pairID"] = str(pairID)
                     pairID += 1
-                    if pairID % 100 == 0:
-                        print("%d sentences generated" % pairID)
                     output_writer.write(new_data)
+                    progress.update(1)
             except Exception as e:
                 self.log_exception(e)
-                if not isinstance(e, FrequencyConstraintError):
+                if not isinstance(e, (FrequencyConstraintError, LexicalGapError)):
                     print(self.get_stack_trace(e))
                 error_counter += 1
-                failure_limit = max(10, number_to_generate // 5)
+                progress.set_postfix(failures=error_counter)
                 if error_counter > failure_limit:
+                    progress.close()
                     raise Exception(
                         "Over 20%% of samples failed for %s. Last error: %s"
                         % (constant_data["UID"], getattr(e, "msg", str(e)))
                     )
+        progress.close()
         output_writer.close()
+        finished_at = datetime.datetime.now()
+        self.write_manifest(
+            {
+                "run": {
+                    "requested_pairs": number_to_generate,
+                    "generated_pairs": pairID,
+                    "failures": error_counter,
+                    "failure_limit": failure_limit,
+                    "started_at": started_at.isoformat(),
+                    "finished_at": finished_at.isoformat(),
+                    "duration_seconds": round(time.time() - started_ts, 3),
+                    "output_path": self._output_path(rel_output_path=rel_output_path, absolute_path=absolute_path),
+                },
+                "generator": constant_data,
+                "frequency_policy": policy_summary,
+                "runtime": {
+                    "trace_recording_enabled": record_trace,
+                    "progress_enabled": progress_enabled,
+                },
+            },
+            rel_output_path=rel_output_path,
+            absolute_path=absolute_path,
+        )
 
 
 class BenchmarkGenerator(Generator):

@@ -2,6 +2,7 @@ import json
 import os
 import re
 from collections import defaultdict
+from functools import lru_cache
 
 import numpy as np
 
@@ -14,6 +15,17 @@ BASE_VOCAB_PATH = os.path.join(PROJECT_ROOT, "vocabulary.csv")
 DEFAULT_OVERLAY_PATH = os.path.join(PROJECT_ROOT, "vocabulary_overlay.csv")
 DEFAULT_OVERLAY_MANIFEST_PATH = os.path.join(PROJECT_ROOT, "vocabulary_overlay_manifest.json")
 DEFAULT_FREQUENCY_CACHE_PATH = os.path.join(PROJECT_ROOT, "outputs", "cache", "vocabulary_frequency_cache.json")
+_GET_ALL_CACHE = {}
+_GET_ALL_CONJ_CACHE = {}
+_GET_MATCHES_OF_CACHE = {}
+_GET_MATCHED_BY_CACHE = {}
+
+
+def clear_query_caches():
+    _GET_ALL_CACHE.clear()
+    _GET_ALL_CONJ_CACHE.clear()
+    _GET_MATCHES_OF_CACHE.clear()
+    _GET_MATCHED_BY_CACHE.clear()
 
 
 def _env_flag(name, default=False):
@@ -117,19 +129,86 @@ def _build_family_expressions(table):
     return family
 
 
+def _build_family_rows(table):
+    by_root = defaultdict(list)
+    by_expression = defaultdict(list)
+    for row in table:
+        expression = str(row["expression"]).strip()
+        if expression:
+            by_expression[expression].append(row)
+        root = str(row["root"]).strip()
+        if root:
+            by_root[root].append(row)
+    family_rows = {}
+    for row in table:
+        signature = row_signature(row)
+        members = []
+        seen = set()
+
+        def _extend(rows_to_add):
+            for candidate in rows_to_add:
+                candidate_signature = row_signature(candidate)
+                if candidate_signature in seen:
+                    continue
+                seen.add(candidate_signature)
+                members.append(candidate)
+
+        expression = str(row["expression"]).strip()
+        if expression:
+            _extend(by_expression.get(expression, ()))
+        root = str(row["root"]).strip()
+        if root:
+            _extend(by_root.get(root, ()))
+        singularform = str(row["singularform"]).strip()
+        pluralform = str(row["pluralform"]).strip()
+        if singularform:
+            _extend(by_expression.get(singularform, ()))
+        if pluralform:
+            _extend(by_expression.get(pluralform, ()))
+        family_rows[signature] = tuple(members)
+    return family_rows
+
+
+def _lemma_expression_for_row(row, family_rows):
+    if row["verb"] == "1":
+        bare_forms = [candidate for candidate in family_rows if candidate["bare"] == "1"]
+        if bare_forms:
+            bare_forms.sort(key=lambda candidate: str(candidate["expression"]))
+            return str(bare_forms[0]["expression"]).strip()
+        non_3sg_present = [candidate for candidate in family_rows if candidate["pres"] == "1" and candidate["3sg"] == "0"]
+        if non_3sg_present:
+            non_3sg_present.sort(key=lambda candidate: str(candidate["expression"]))
+            return str(non_3sg_present[0]["expression"]).strip()
+    if row["noun"] == "1":
+        singular_forms = [candidate for candidate in family_rows if candidate["sg"] == "1" and candidate["pl"] != "1"]
+        if singular_forms:
+            singular_forms.sort(key=lambda candidate: str(candidate["expression"]))
+            return str(singular_forms[0]["expression"]).strip()
+    expression = str(row["expression"]).strip()
+    if expression:
+        return expression
+    if family_rows:
+        return str(family_rows[0]["expression"]).strip()
+    return ""
+
+
 def build_frequency_cache(table):
     family_expressions = _build_family_expressions(table)
+    family_rows = _build_family_rows(table)
     cache = {}
     for row in table:
         signature = row_signature(row)
         expression = str(row["expression"]).strip()
         family = family_expressions.get(signature, ())
+        lemma_expression = _lemma_expression_for_row(row, family_rows.get(signature, ()))
         family_zipf = [zipf_for_expression(expr) for expr in family if expr]
         family_zipf = [value for value in family_zipf if value > 0.0]
         cache[signature] = {
             "row_signature": signature,
             "expression": expression,
             "zipf_expression": zipf_for_expression(expression),
+            "lemma_expression": lemma_expression,
+            "zipf_lemma": zipf_for_expression(lemma_expression),
             "zipf_root": min(family_zipf) if family_zipf else zipf_for_expression(expression),
         }
     return cache
@@ -198,7 +277,7 @@ def get_runtime_vocab():
 
 
 def get_row_metadata(row):
-    return dict(ROW_METADATA_BY_SIGNATURE.get(row_signature(row), {}))
+    return ROW_METADATA_BY_SIGNATURE.get(row_signature(row), {})
 
 
 def get_row_frequency(row):
@@ -206,7 +285,7 @@ def get_row_frequency(row):
     record = FREQUENCY_CACHE.get(signature)
     if record is None:
         record = build_frequency_cache(np.array([row], dtype=vocab.dtype)).get(signature, {})
-    return dict(record)
+    return record
 
 
 def get_family_expressions(row):
@@ -217,6 +296,14 @@ def get_frequency_cache():
     return dict(FREQUENCY_CACHE)
 
 
+def _table_cache_key(table):
+    interface = getattr(table, "__array_interface__", None)
+    data_ptr = None
+    if interface and interface.get("data"):
+        data_ptr = interface["data"][0]
+    return data_ptr, getattr(table, "shape", None), getattr(table, "strides", None), str(getattr(table, "dtype", ""))
+
+
 def get_all(label, value, table=vocab):
     """
     :param label: string. field name.
@@ -224,19 +311,25 @@ def get_all(label, value, table=vocab):
     :param table: ndarray of vocab items.
     :return: table restricted to all entries with "value" in field "label"
     """
-    # TODO: this should not be based on string equality, but disjunction matching
-    # return np.array(list(filter(lambda x: condition_is_match_disj(value, x[label]), table)), dtype=data_type)
-    return np.array(list(filter(lambda x: x[label] == value, table)), dtype=table.dtype)
+    key = (label, value, _table_cache_key(table))
+    if key not in _GET_ALL_CACHE:
+        # TODO: this should not be based on string equality, but disjunction matching
+        # return np.array(list(filter(lambda x: condition_is_match_disj(value, x[label]), table)), dtype=data_type)
+        _GET_ALL_CACHE[key] = np.array(list(filter(lambda x: x[label] == value, table)), dtype=table.dtype)
+    return _GET_ALL_CACHE[key]
 
 def get_all_conjunctive(labels_values, table=vocab):
     """
     :param labels_values: list of (l,v) pairs: [(l1, v1), (l2, v2), (l3, v3)]
     :return: vocab items with the given value for each label
     """
-    to_return = table
-    for label, value in labels_values:
-        to_return = np.array(list(filter(lambda x: x[label] == value, to_return)), dtype=table.dtype)
-    return to_return
+    key = (tuple(labels_values), _table_cache_key(table))
+    if key not in _GET_ALL_CONJ_CACHE:
+        to_return = table
+        for label, value in labels_values:
+            to_return = np.array(list(filter(lambda x: x[label] == value, to_return)), dtype=table.dtype)
+        _GET_ALL_CONJ_CACHE[key] = to_return
+    return _GET_ALL_CONJ_CACHE[key]
 
 
 def get_matches_of(row, label, table=vocab):
@@ -250,12 +343,15 @@ def get_matches_of(row, label, table=vocab):
     if value == "":
         pass
     else:
-        matches = []
-        values = str(value).split(";")
-        for disjunct in values:
-            k_vs = conj_list(disjunct)
-            matches.extend(list(get_all_conjunctive(k_vs, table)))
-        return np.array(matches, dtype=table.dtype)
+        key = (row_signature(np.array(row, dtype=table.dtype)), label, _table_cache_key(table))
+        if key not in _GET_MATCHES_OF_CACHE:
+            matches = []
+            values = str(value).split(";")
+            for disjunct in values:
+                k_vs = conj_list(disjunct)
+                matches.extend(list(get_all_conjunctive(k_vs, table)))
+            _GET_MATCHES_OF_CACHE[key] = np.array(matches, dtype=table.dtype)
+        return _GET_MATCHES_OF_CACHE[key]
 
 
 def get_matches_of_conj(rows_labels, table=vocab):
@@ -281,21 +377,25 @@ def get_matched_by(row, label, table=vocab):
     :param table: ndarray of vocab items.
     :return: all entries in table whose selectional restrictions in label are matched by row.
     """
-    matches = []
-    for entry in table:
-        value = str(np.array(entry, dtype=table.dtype)[label])
-        if is_match_disj(row, value):
-            matches.append(entry)
-    return np.array(matches)
+    key = (row_signature(np.array(row, dtype=table.dtype)), label, _table_cache_key(table))
+    if key not in _GET_MATCHED_BY_CACHE:
+        matches = []
+        for entry in table:
+            value = str(np.array(entry, dtype=table.dtype)[label])
+            if is_match_disj(row, value):
+                matches.append(entry)
+        _GET_MATCHED_BY_CACHE[key] = np.array(matches, dtype=table.dtype)
+    return _GET_MATCHED_BY_CACHE[key]
 
 
+@lru_cache(maxsize=None)
 def conj_list(conjunction):
     """
     :param disjunct: a string corresponding to a conjunction of selectional restrictions
     :return: a list of k, v pairs 
     """
     try:
-        to_return = [(v.split("=")[0], v.split("=")[1]) for v in conjunction.split("^")]
+        to_return = tuple((v.split("=")[0], v.split("=")[1]) for v in conjunction.split("^"))
         return to_return
     except IndexError:
         pass
@@ -359,6 +459,3 @@ def condition_is_match_conj(condition, conjunction):
         except TypeError:
             pass
     return match
-
-
-

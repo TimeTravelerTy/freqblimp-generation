@@ -5,7 +5,7 @@ from typing import Dict, Iterable, Optional
 
 import numpy as np
 
-from utils.exceptions import FrequencyConstraintError
+from utils.exceptions import FrequencyConstraintError, LexicalGapError
 from utils.frequency import coerce_float, get_row_controlled_pos, normalize_controlled_pos
 
 
@@ -25,6 +25,7 @@ class SamplingPolicy:
 
     def __post_init__(self):
         self.controlled_pos = tuple(sorted(normalize_controlled_pos(self.controlled_pos)))
+        self.controlled_pos_set = set(self.controlled_pos)
         self.zipf_min = {key: coerce_float(value) for key, value in dict(self.zipf_min or {}).items()}
         self.zipf_max = {key: coerce_float(value) for key, value in dict(self.zipf_max or {}).items()}
 
@@ -46,6 +47,7 @@ class SamplingPolicy:
 
 _ACTIVE_POLICY = None
 _TRACE_EVENTS = []
+_TRACE_ENABLED = True
 _RNG = random.Random()
 
 
@@ -75,13 +77,28 @@ def get_active_policy_summary():
     return _ACTIVE_POLICY.summary()
 
 
+def set_trace_recording_enabled(enabled: bool):
+    global _TRACE_ENABLED, _TRACE_EVENTS
+    _TRACE_ENABLED = bool(enabled)
+    if not _TRACE_ENABLED:
+        _TRACE_EVENTS = []
+
+
+def trace_recording_enabled():
+    return _TRACE_ENABLED
+
+
 def begin_record_trace():
     global _TRACE_EVENTS
+    if not _TRACE_ENABLED:
+        return
     _TRACE_EVENTS = []
 
 
 def consume_record_trace():
     global _TRACE_EVENTS
+    if not _TRACE_ENABLED:
+        return []
     events = list(_TRACE_EVENTS)
     _TRACE_EVENTS = []
     return events
@@ -90,7 +107,7 @@ def consume_record_trace():
 def uniform_choice(set, avoid=np.array([])):
     candidates = np.setdiff1d(set, avoid)
     if len(candidates) == 0:
-        raise IndexError("Cannot choose from an empty sequence")
+        raise LexicalGapError("No candidates available for uniform sampling")
     return _RNG.choice(list(candidates))
 
 
@@ -107,7 +124,7 @@ def _policy_candidates(candidates):
     if len(positions) != 1:
         return None, None, None
     controlled_pos = next(iter(positions))
-    if controlled_pos not in set(policy.controlled_pos):
+    if controlled_pos not in policy.controlled_pos_set:
         return None, None, None
     from utils.vocab_table import get_row_frequency
     eligible = []
@@ -143,13 +160,14 @@ def _weighted_choice(eligible, policy):
 
 
 def _record_trace(row, frequency, controlled_pos, candidate_count, eligible_count, policy):
-    if policy is None:
+    if policy is None or not _TRACE_ENABLED:
         return
     from utils.vocab_table import get_family_expressions, get_row_metadata
     metadata = get_row_metadata(row)
+
     event = {
         "expression": str(row["expression"]),
-        "controlled_pos": controlled_pos,
+        "pos": controlled_pos,
         "zipf": coerce_float(frequency.get("zipf_expression")) or 0.0,
         "source": metadata.get("source", "base"),
         "_match_expressions": list(get_family_expressions(row) or [str(row["expression"])]),
@@ -176,7 +194,7 @@ def choice(set, avoid=np.array([])):
     """
     candidates = np.setdiff1d(set, avoid)
     if len(candidates) == 0:
-        raise IndexError("Cannot choose from an empty sequence")
+        raise LexicalGapError("No candidates available for policy-aware sampling")
     controlled_pos, eligible, policy = _policy_candidates(candidates)
     if eligible is None:
         return uniform_choice(candidates)

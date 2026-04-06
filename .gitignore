@@ -113,3 +113,13 @@ slurm/wh_questions_subject_gap.sbatch
 slurm/wh_questions_subject_gap_long_distance.sbatch
 slurm/wh_vs_that_no_gap_long_distance.sbatch
 slurm/wh_vs_that_with_gap_long_distance.sbatch
+
+# Generated BLiMP verb-frame review artifacts
+generation_projects/blimp/verb_frame_review_flags*.md
+generation_projects/blimp/verb_inventory.json
+generation_projects/blimp/verb_inventory.summary.json
+
+# Generated overlay data
+vocabulary_overlay.csv
+vocabulary_overlay_manifest.json
+outputs/cache/
