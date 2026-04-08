@@ -104,8 +104,19 @@ def consume_record_trace():
     return events
 
 
-def uniform_choice(set, avoid=np.array([])):
-    candidates = np.setdiff1d(set, avoid)
+def _without_avoid(candidates, avoid):
+    if avoid is None:
+        return candidates
+    try:
+        if len(avoid) == 0:
+            return candidates
+    except TypeError:
+        pass
+    return np.setdiff1d(candidates, avoid)
+
+
+def uniform_choice(set, avoid=None):
+    candidates = _without_avoid(set, avoid)
     if len(candidates) == 0:
         raise LexicalGapError("No candidates available for uniform sampling")
     return _RNG.choice(list(candidates))
@@ -186,13 +197,13 @@ def subset(set, probability):
     np.random.shuffle(set)
     return set[:math.floor(len(set) * probability)]
 
-def choice(set, avoid=np.array([])):
+def choice(set, avoid=None):
     """
     :param set: a set of vocab entries
     :param avoid: list of vocab entries to avoid sampling
     :return: a random element from the set
     """
-    candidates = np.setdiff1d(set, avoid)
+    candidates = _without_avoid(set, avoid)
     if len(candidates) == 0:
         raise LexicalGapError("No candidates available for policy-aware sampling")
     controlled_pos, eligible, policy = _policy_candidates(candidates)
