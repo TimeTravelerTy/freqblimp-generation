@@ -9,6 +9,7 @@ from pathlib import Path
 import wn
 from lemminflect import getInflection
 
+from generation_projects.blimp.overlay_guards import curated_template_expressions
 from utils.frequency import zipf_for_expression
 from utils.vocab_table import BASE_VOCAB_PATH, build_frequency_cache, write_frequency_cache
 from utils.data_type import data_type
@@ -53,7 +54,17 @@ NOUN_BUNDLE_FIELDS = {
     "institution": {"institution": "1", "locale": "", "mass": "0", "properNoun": "0"},
     "locale_institution": {"locale": "1", "institution": "1", "mass": "0", "properNoun": "0"},
 }
-VERB_SIG_FIELDS = ("arg_1", "arg_2", "strict_intrans", "strict_trans", "causative", "inchoative")
+VERB_SIG_FIELDS = (
+    "category",
+    "category_2",
+    "arg_1",
+    "arg_2",
+    "strict_intrans",
+    "strict_trans",
+    "causative",
+    "inchoative",
+    "passive",
+)
 FIELD_ALIASES = {
     "synonym/hypernym/hyponym": "synonym_hypernym_hyponym",
 }
@@ -67,6 +78,18 @@ ADJECTIVE_TEMPLATE_FIELDS = {
     "physical_inanimate": "physical=1^animate=0",
     "vegetable": "vegetable=1",
 }
+SPECIAL_ADJECTIVE_CATEGORY2 = (
+    "Adj_clausal",
+    "Adj_control_subj",
+    "Adj_raising_subj",
+    "Adj_tough",
+)
+SPECIAL_VERB_CATEGORY2 = (
+    "V_control_object",
+    "V_control_subj",
+    "V_raising_object",
+    "V_raising_subj",
+)
 ADJECTIVE_RELATIONAL_PREFIXES = (
     "of or relating to ",
     "relating to ",
@@ -540,6 +563,24 @@ def _adjective_template_index(rows):
     return index
 
 
+def _special_adjective_template_index(rows):
+    index = defaultdict(list)
+    for row in rows:
+        category_2 = row.get("category_2", "")
+        if category_2 not in SPECIAL_ADJECTIVE_CATEGORY2:
+            continue
+        index[category_2].append(row)
+    for category_2, family in index.items():
+        preferred = {expr.lower() for expr in curated_template_expressions(category_2)}
+        family.sort(
+            key=lambda row: (
+                0 if str(row["expression"]).strip().lower() in preferred else 1,
+                str(row["expression"]),
+            )
+        )
+    return index
+
+
 def _choose_template(rows):
     singular = [row for row in rows if row.get("sg", "") == "1"]
     singular.sort(key=lambda row: row["expression"])
@@ -742,6 +783,35 @@ def _core_verb_template_index(rows):
     return index
 
 
+def _special_verb_template_index(rows):
+    index = defaultdict(list)
+    by_root = defaultdict(list)
+    for row in rows:
+        if row["verb"] != "1":
+            continue
+        category_2 = row.get("category_2", "")
+        if category_2 not in SPECIAL_VERB_CATEGORY2:
+            continue
+        by_root[(category_2, row["root"])].append(row)
+    for (category_2, _root), family in by_root.items():
+        family = sorted(family, key=lambda row: row["expression"])
+        if any("_" in row["expression"] or "-" in row["expression"] for row in family):
+            continue
+        suffix_token = _template_suffix_token(family) if any(" " in row["expression"] for row in family) else None
+        if any(" " in row["expression"] for row in family) and suffix_token is None:
+            continue
+        index[category_2].append((family, suffix_token))
+    for category_2, families in index.items():
+        preferred = {expr.lower() for expr in curated_template_expressions(category_2)}
+        families.sort(
+            key=lambda item: (
+                0 if str(item[0][0]["expression"]).strip().lower() in preferred else 1,
+                str(item[0][0]["root"]),
+            )
+        )
+    return index
+
+
 def _verb_sig_key(row):
     return tuple(row.get(field, "") for field in VERB_SIG_FIELDS)
 
@@ -765,6 +835,16 @@ def _template_suffix_token(template_family):
     if len(tokens) != 2:
         return None
     return tokens[-1].lower()
+
+
+def _special_verb_candidate_keys(entry):
+    frame_types = set(entry.get("frame_types") or ())
+    keys = []
+    if "intr" in frame_types or "trans" in frame_types:
+        keys.extend(("V_raising_subj", "V_control_subj"))
+    if "trans" in frame_types:
+        keys.extend(("V_raising_object", "V_control_object"))
+    return keys
 
 
 def _multiword_verb_template_index(rows, category):
@@ -806,7 +886,7 @@ def _verb_form_for_row(lemma, row):
 
 def _make_verb_rows(lemma, template_family, template_label, suffix_token=None):
     category = template_family[0]["category"]
-    root_suffix = "SNP" if category == "S\\NP" else "SNP_NP"
+    root_suffix = _safe_root_token(category)
     new_root = "%s_overlay_%s_%s" % (lemma, root_suffix, _safe_root_token(template_label))
     rows = []
     for template_row in template_family:
@@ -949,6 +1029,7 @@ def build_overlay(args):
     if args.include_verbs:
         template_index = _core_verb_template_index(_BASE_ROWS)
         sig_index = _sig_verb_template_index(template_index)
+        special_template_index = _special_verb_template_index(_BASE_ROWS)
         intr_pp_template_index = _multiword_verb_template_index(_BASE_ROWS, "(S\\NP)/NP")
         intr_particle_template_index = _multiword_verb_template_index(_BASE_ROWS, "S\\NP")
         trans_particle_template_index = _multiword_verb_template_index(_BASE_ROWS, "(S\\NP)/NP")
@@ -976,6 +1057,7 @@ def build_overlay(args):
             if args.verb_zipf_max is not None and zipf_value > args.verb_zipf_max:
                 _record_rejection(audit, "verb", lemma, "above_zipf_max", zipf=zipf_value)
                 continue
+            special_keys = _special_verb_candidate_keys(entry)
             suffix_token = None
             template_key = _core_template_key(entry["frame_types"])
             families_for_key = None
@@ -1002,7 +1084,7 @@ def build_overlay(args):
                         suffix_token = particle
                         families_for_key = trans_particle_template_index[particle]
                         break
-            if template_key is None:
+            if template_key is None and not special_keys:
                 reason = "ambiguous_core_frames" if "intr" in entry["frame_types"] and "trans" in entry["frame_types"] else "unsupported_frame_types"
                 if entry["frame_values"].get("ditrans_pp"):
                     reason = "unsupported_ditrans_pp"
@@ -1016,7 +1098,7 @@ def build_overlay(args):
                     frame_values=entry["frame_values"],
                 )
                 continue
-            if not families_for_key:
+            if template_key is not None and not families_for_key:
                 _record_rejection(
                     audit,
                     "verb",
@@ -1027,19 +1109,19 @@ def build_overlay(args):
                     frame_values=entry["frame_values"],
                 )
                 continue
-            sig_families = list(sig_index.get(template_key, {}).values())
-            if not sig_families and families_for_key:
+            sig_families = list(sig_index.get(template_key, {}).values()) if template_key is not None else []
+            if template_key is not None and not sig_families and families_for_key:
                 # Multiword families are indexed separately, so preserve the old fallback.
                 sig_families = [families_for_key[0]]
             if args.verb_templates_per_lemma > 0:
                 sig_families = sig_families[:args.verb_templates_per_lemma]
             admitted_any_sig = False
+            saw_inflection_failure = False
             for sig_family in sig_families:
                 template_label = sig_family[0]["root"]
                 new_rows = _make_verb_rows(lemma, sig_family, template_label, suffix_token=suffix_token)
                 if not new_rows:
-                    if not admitted_any_sig:
-                        _record_rejection(audit, "verb", lemma, "inflection_failed", zipf=zipf_value, bundle=template_key)
+                    saw_inflection_failure = True
                     continue
                 new_signatures = [_row_signature_from_dict(row) for row in new_rows]
                 if any(signature in existing_signatures for signature in new_signatures):
@@ -1067,8 +1149,47 @@ def build_overlay(args):
                         "bundle": template_key,
                     })
                     existing_signatures.add(signature)
+            for special_key in special_keys:
+                special_families = list(special_template_index.get(special_key, ()))
+                if args.verb_templates_per_lemma > 0:
+                    special_families = special_families[:args.verb_templates_per_lemma]
+                for special_family, special_suffix in special_families:
+                    template_label = special_family[0]["root"] or special_key
+                    new_rows = _make_verb_rows(lemma, special_family, template_label, suffix_token=special_suffix)
+                    if not new_rows:
+                        saw_inflection_failure = True
+                        continue
+                    new_signatures = [_row_signature_from_dict(row) for row in new_rows]
+                    if any(signature in existing_signatures for signature in new_signatures):
+                        continue
+                    overlay_rows.extend(new_rows)
+                    admitted_any_sig = True
+                    _record_admission(
+                        audit,
+                        "verb",
+                        lemma,
+                        zipf_value,
+                        template_label,
+                        special_key,
+                        len(new_rows),
+                    )
+                    for row, signature in zip(new_rows, new_signatures):
+                        manifest_rows.append({
+                            "row_signature": signature,
+                            "source": "overlay",
+                            "source_lexicon": "verb_inventory",
+                            "source_lemma": lemma,
+                            "inherited_template": template_label,
+                            "validation_status": "validated",
+                            "overlay_type": "verb",
+                            "bundle": special_key,
+                        })
+                        existing_signatures.add(signature)
             if not admitted_any_sig:
-                _record_rejection(audit, "verb", lemma, "family_collision", zipf=zipf_value, bundle=template_key)
+                if saw_inflection_failure:
+                    _record_rejection(audit, "verb", lemma, "inflection_failed", zipf=zipf_value, bundle=template_key or "special")
+                else:
+                    _record_rejection(audit, "verb", lemma, "family_collision", zipf=zipf_value, bundle=template_key or "special")
             else:
                 admitted += 1
             if admitted >= args.verb_limit:
@@ -1076,6 +1197,7 @@ def build_overlay(args):
 
     if args.include_adjectives:
         adjective_templates = _adjective_template_index(_BASE_ROWS)
+        special_adjective_templates = _special_adjective_template_index(_BASE_ROWS)
         adjective_candidates = _load_oe_adjective_lemmas(args.lexicon)
         rng.shuffle(adjective_candidates)
         admitted = 0
@@ -1109,8 +1231,7 @@ def build_overlay(args):
                     zipf=zipf_value,
                     definitions=definitions[:3],
                 )
-                continue
-            if bundle_confidence < args.adjective_bundle_min_confidence:
+            elif bundle_confidence < args.adjective_bundle_min_confidence:
                 _record_rejection(
                     audit,
                     "adjective",
@@ -1121,44 +1242,73 @@ def build_overlay(args):
                     bundle_confidence=round(bundle_confidence, 3),
                     definitions=definitions[:3],
                 )
-                continue
             template_rows = adjective_templates.get(bundle, ())
             template_row = _choose_template(template_rows)
-            if template_row is None:
+            admitted_any = False
+            if template_row is not None:
+                new_rows = _make_adjective_rows(lemma, template_row)
+                new_signatures = [_row_signature_from_dict(row) for row in new_rows]
+                if new_rows and not any(signature in existing_signatures for signature in new_signatures):
+                    overlay_rows.extend(new_rows)
+                    admitted_any = True
+                    _record_admission(
+                        audit,
+                        "adjective",
+                        lemma,
+                        zipf_value,
+                        template_row["expression"],
+                        bundle,
+                        len(new_rows),
+                    )
+                    for row, signature in zip(new_rows, new_signatures):
+                        manifest_rows.append({
+                            "row_signature": signature,
+                            "source": "overlay",
+                            "source_lexicon": "oewn",
+                            "source_lemma": lemma,
+                            "inherited_template": template_row["expression"],
+                            "validation_status": "validated",
+                            "overlay_type": "adjective",
+                            "bundle": bundle,
+                        })
+                        existing_expressions.add(row["expression"])
+                        existing_signatures.add(signature)
+            for special_key, special_rows in special_adjective_templates.items():
+                special_template = _choose_template(special_rows)
+                if special_template is None:
+                    continue
+                new_rows = _make_adjective_rows(lemma, special_template)
+                new_signatures = [_row_signature_from_dict(row) for row in new_rows]
+                if not new_rows or any(signature in existing_signatures for signature in new_signatures):
+                    continue
+                overlay_rows.extend(new_rows)
+                admitted_any = True
+                _record_admission(
+                    audit,
+                    "adjective",
+                    lemma,
+                    zipf_value,
+                    special_template["expression"],
+                    special_key,
+                    len(new_rows),
+                )
+                for row, signature in zip(new_rows, new_signatures):
+                    manifest_rows.append({
+                        "row_signature": signature,
+                        "source": "overlay",
+                        "source_lexicon": "oewn",
+                        "source_lemma": lemma,
+                        "inherited_template": special_template["expression"],
+                        "validation_status": "validated",
+                        "overlay_type": "adjective",
+                        "bundle": special_key,
+                    })
+                    existing_expressions.add(row["expression"])
+                    existing_signatures.add(signature)
+            if not admitted_any:
                 _record_rejection(audit, "adjective", lemma, "missing_bundle_template", zipf=zipf_value, bundle=bundle)
                 continue
-            new_rows = _make_adjective_rows(lemma, template_row)
-            if not new_rows:
-                _record_rejection(audit, "adjective", lemma, "template_copy_failed", zipf=zipf_value, bundle=bundle)
-                continue
-            new_signatures = [_row_signature_from_dict(row) for row in new_rows]
-            if any(signature in existing_signatures for signature in new_signatures):
-                _record_rejection(audit, "adjective", lemma, "family_collision", zipf=zipf_value, bundle=bundle)
-                continue
-            overlay_rows.extend(new_rows)
             admitted += 1
-            _record_admission(
-                audit,
-                "adjective",
-                lemma,
-                zipf_value,
-                template_row["expression"],
-                bundle,
-                len(new_rows),
-            )
-            for row, signature in zip(new_rows, new_signatures):
-                manifest_rows.append({
-                    "row_signature": signature,
-                    "source": "overlay",
-                    "source_lexicon": "oewn",
-                    "source_lemma": lemma,
-                    "inherited_template": template_row["expression"],
-                    "validation_status": "validated",
-                    "overlay_type": "adjective",
-                    "bundle": bundle,
-                })
-                existing_expressions.add(row["expression"])
-                existing_signatures.add(signature)
 
     _write_rows(args.overlay_path, overlay_rows, _FIELDNAMES)
     manifest_path = Path(args.manifest_path)

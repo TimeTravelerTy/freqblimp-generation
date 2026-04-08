@@ -2,6 +2,12 @@ from utils import data_generator
 from utils.constituent_building import *
 from utils.conjugate import *
 from utils.randomize import choice
+from functools import reduce
+
+from generation_projects.blimp.overlay_guards import (
+    control_object_verb_rows,
+    object_raising_verb_rows,
+)
 
 class Generator(data_generator.BenchmarkGenerator):
     def __init__(self):
@@ -18,8 +24,8 @@ class Generator(data_generator.BenchmarkGenerator):
         self.good_quantifiers_pl = reduce(np.union1d, [get_all("expression", s, all_determiners) for s in good_quantifiers_pl_str])
         bad_emb_subjs = reduce(np.union1d, (all_relational_poss_nouns, all_proper_names, get_all("category", "NP")))
         self.safe_emb_subjs = np.setdiff1d(all_nominals, bad_emb_subjs)
-        self.raising_verbs = get_all("category_2", "V_raising_object")
-        self.control_verbs = get_all("category_2", "V_control_object")
+        self.raising_verbs = object_raising_verb_rows()
+        self.control_verbs = control_object_verb_rows()
 
     def sample(self):
         # John   believed there to be a party    happening

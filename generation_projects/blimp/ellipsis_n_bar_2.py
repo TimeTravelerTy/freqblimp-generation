@@ -54,6 +54,7 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
 
         self.safe_objs_pl = np.setdiff1d(all_nominals, all_proper_names)
         self.safe_objs_sg = np.setdiff1d(all_nominals, all_proper_names)
+        self.safe_objs = np.setdiff1d(all_nominals, all_proper_names)
 
     def sample(self):
         # John  has  had two cups and Jane  has  had three green cups.

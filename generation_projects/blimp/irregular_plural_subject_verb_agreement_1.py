@@ -2,6 +2,7 @@ from utils import data_generator
 from utils.constituent_building import *
 from utils.conjugate import *
 from utils.vocab_sets import *
+from functools import reduce
 
 class AgreementGenerator(data_generator.BenchmarkGenerator):
     def __init__(self):

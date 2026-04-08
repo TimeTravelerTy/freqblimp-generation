@@ -2,6 +2,15 @@ from utils import data_generator
 from utils.constituent_building import *
 from utils.conjugate import *
 from utils.randomize import choice
+from functools import reduce
+
+from generation_projects.blimp.overlay_guards import (
+    control_subject_verb_rows,
+    control_subject_adjective_rows,
+    overlay_enabled,
+    subject_raising_verb_rows,
+    subject_raising_adjective_rows,
+)
 
 class Generator(data_generator.BenchmarkGenerator):
     def __init__(self):
@@ -18,8 +27,10 @@ class Generator(data_generator.BenchmarkGenerator):
         self.good_quantifiers_pl = reduce(np.union1d, [get_all("expression", s, all_determiners) for s in good_quantifiers_pl_str])
         bad_emb_subjs = reduce(np.union1d, (all_relational_poss_nouns, all_proper_names, get_all("category", "NP")))
         self.safe_emb_subjs = np.setdiff1d(all_nominals, bad_emb_subjs)
-        self.raising_verbs = get_all("category_2", "V_raising_subj")
-        self.control_verbs = np.setdiff1d(get_all("category_2", "V_control_subj"), get_all("root", "fail_(S\\NP)/(S[to]\\N)"))
+        self.raising_verbs = subject_raising_verb_rows()
+        self.control_verbs = np.setdiff1d(control_subject_verb_rows(), get_all("root", "fail_(S\\NP)/(S[to]\\N)"))
+        self.raising_pred_rows = subject_raising_adjective_rows()
+        self.control_pred_rows = control_subject_adjective_rows()
         self.raising_preds = ["about", "apt", "bound", "certain", "likely", "soon", "sure", "unlikely"]
         self.control_preds = ["able", "anxious", "eager", "excited", "happy", "overjoyed", "pleased", "ready",
                               "reluctant", "unable", "unhappy", "unwilling", "willing"]
@@ -47,14 +58,16 @@ class Generator(data_generator.BenchmarkGenerator):
             aux = return_aux(control, emb_subj, allow_negated=allow_negated)
             control = control[0]
         else:
-            control = choice(self.control_preds)
+            control_row = choice(self.control_pred_rows) if overlay_enabled() and len(self.control_pred_rows) > 0 else None
+            control = control_row[0] if control_row is not None else choice(self.control_preds)
             aux = return_copula(emb_subj, allow_negated=allow_negated)
 
         if verbal_predicate:
             raising = choice(np.intersect1d(self.raising_verbs, get_matches_of(aux, "arg_2", agree_verbs)))
             raising = raising[0]
         else:
-            raising = choice(self.raising_preds)
+            raising_row = choice(self.raising_pred_rows) if overlay_enabled() and len(self.raising_pred_rows) > 0 else None
+            raising = raising_row[0] if raising_row is not None else choice(self.raising_preds)
 
         V = choice(get_matched_by(emb_subj, "arg_1", all_ing_verbs))
         args = verb_args_from_verb(V, subj=emb_subj, allow_negated=allow_negated)

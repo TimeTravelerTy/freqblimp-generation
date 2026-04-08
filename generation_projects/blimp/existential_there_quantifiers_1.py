@@ -2,6 +2,9 @@ from utils import data_generator
 from utils.constituent_building import *
 from utils.conjugate import *
 from utils.randomize import choice
+from functools import reduce
+
+from generation_projects.blimp.overlay_guards import filter_nouns_for_requirement
 
 class Generator(data_generator.BenchmarkGenerator):
     def __init__(self):
@@ -30,7 +33,8 @@ class Generator(data_generator.BenchmarkGenerator):
         # There is  every monster eating children.
         # THERE aux d_bad subj    VP
 
-        subj = N_to_DP_mutate(choice(self.safe_subjs), determiner=False)
+        noun_pool = filter_nouns_for_requirement(self.safe_subjs, "COUNT")
+        subj = N_to_DP_mutate(choice(noun_pool), determiner=False)
         d_good = choice(get_matched_by(subj, "arg_1", self.good_quantifiers_sg)) \
             if subj["sg"] == "1" \
             else choice(get_matched_by(subj, "arg_1", self.good_quantifiers_pl))

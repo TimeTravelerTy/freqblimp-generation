@@ -3,6 +3,12 @@ from utils.constituent_building import *
 from utils.conjugate import *
 from utils.randomize import choice
 
+from generation_projects.blimp.overlay_guards import (
+    clausal_it_adjective_rows,
+    control_object_verb_rows,
+    object_raising_verb_rows,
+)
+
 class Generator(data_generator.BenchmarkGenerator):
     def __init__(self):
         super().__init__(field="syntax_semantics",
@@ -12,9 +18,9 @@ class Generator(data_generator.BenchmarkGenerator):
                          one_prefix_method=False,
                          two_prefix_method=True,
                          lexically_identical=False)
-        self.clause_embedding_adjectives = get_all("category_2", "Adj_clausal", get_all("arg_1", "expression=it"))
-        self.raising_verbs = get_all("category_2", "V_raising_object")
-        self.control_verbs = get_all("category_2", "V_control_object")
+        self.clause_embedding_adjectives = clausal_it_adjective_rows()
+        self.raising_verbs = object_raising_verb_rows()
+        self.control_verbs = control_object_verb_rows()
 
     def sample(self):
         # John   may        consider it to be unfortunate that Bill has left.

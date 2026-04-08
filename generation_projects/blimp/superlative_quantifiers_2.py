@@ -2,8 +2,9 @@ from utils import data_generator
 from utils.constituent_building import *
 from utils.conjugate import *
 from utils.randomize import choice
-import inflect
 from utils.vocab_sets import *
+
+from generation_projects.blimp.overlay_guards import number_to_words
 
 class SuperlativeGenerator(data_generator.BenchmarkGenerator):
     def __init__(self):
@@ -30,8 +31,7 @@ class SuperlativeGenerator(data_generator.BenchmarkGenerator):
         V = conjugate(V, N1, False)
         N2 = choice(get_matches_of(V, "arg_2", self.safe_nouns))
         Qsup = random.choice(self.quantifiers)
-        number_inflector = inflect.engine()
-        Num = number_inflector.number_to_words(random.randint(2, 10))
+        Num = number_to_words(random.randint(2, 10))
         data = {
             "sentence_good": "%s %s %s %s %s %s." % (Q[0], N1[0], V[0], Qsup, Num, N2[0]),
             "sentence_bad": "No %s %s %s %s %s." % (N1[0], V[0], Qsup, Num, N2[0]),

@@ -3,6 +3,11 @@ from utils.constituent_building import *
 from utils.conjugate import *
 from utils.randomize import choice
 
+from generation_projects.blimp.overlay_guards import (
+    subject_raising_adjective_rows,
+    tough_adjective_rows,
+)
+
 class Generator(data_generator.BenchmarkGenerator):
     def __init__(self):
         super().__init__(field="syntax_semantics",
@@ -13,8 +18,8 @@ class Generator(data_generator.BenchmarkGenerator):
                          two_prefix_method=False,
                          lexically_identical=False)
 
-        self.raising_preds = get_all("category_2", "Adj_raising_subj")
-        self.tough_preds = np.setdiff1d(get_all("category_2", "Adj_tough"), get_all("expression", "ready"))
+        self.raising_preds = subject_raising_adjective_rows()
+        self.tough_preds = np.setdiff1d(tough_adjective_rows(), get_all("expression", "ready"))
         self.safe_verbs = np.setdiff1d(all_bare_verbs,
                                        np.union1d(get_all("causative", "1"), get_all("strict_intrans", "0")))
 
