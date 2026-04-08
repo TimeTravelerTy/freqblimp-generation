@@ -19,6 +19,9 @@ _GET_ALL_CACHE = {}
 _GET_ALL_CONJ_CACHE = {}
 _GET_MATCHES_OF_CACHE = {}
 _GET_MATCHED_BY_CACHE = {}
+_TABLE_LABEL_INDEX = {}  # (label, table_key) -> {str_value -> np.array of row indices}
+_TABLE_ZIPF_EXPRESSION_CACHE = {}
+_EXPRESSION_ZIPF_REGISTRY = None
 
 
 def clear_query_caches():
@@ -26,6 +29,22 @@ def clear_query_caches():
     _GET_ALL_CONJ_CACHE.clear()
     _GET_MATCHES_OF_CACHE.clear()
     _GET_MATCHED_BY_CACHE.clear()
+    _TABLE_LABEL_INDEX.clear()
+    _TABLE_ZIPF_EXPRESSION_CACHE.clear()
+
+
+def _get_label_index(label, table):
+    """Build and cache an inverted index for a field of any table: value -> row indices."""
+    tkey = (label, _table_cache_key(table))
+    if tkey not in _TABLE_LABEL_INDEX:
+        col = table[label]
+        unique_vals, inverse = np.unique(col, return_inverse=True)
+        sort_order = np.argsort(inverse, kind="stable")
+        sorted_codes = inverse[sort_order]
+        splits = np.where(np.diff(sorted_codes))[0] + 1
+        groups = np.split(sort_order, splits)
+        _TABLE_LABEL_INDEX[tkey] = {str(unique_vals[i]): groups[i] for i in range(len(unique_vals))}
+    return _TABLE_LABEL_INDEX[tkey]
 
 
 def _env_flag(name, default=False):
@@ -44,10 +63,22 @@ def _decode_entry(entry):
 def _load_vocab_csv(path):
     if not path or not os.path.exists(path):
         return np.array([], dtype=data_type)
+    npy_cache = path + ".npy"
+    if os.path.exists(npy_cache) and os.path.getmtime(npy_cache) >= os.path.getmtime(path):
+        try:
+            return np.load(npy_cache, allow_pickle=False)
+        except Exception:
+            pass
     table = np.genfromtxt(path, delimiter=",", names=True, dtype=data_type)
     if getattr(table, "shape", ()) == ():
         table = np.array([table], dtype=data_type)
-    return np.array([_decode_entry(entry) for entry in table], dtype=data_type)
+    table = table.copy()
+    table["expression"] = np.char.replace(table["expression"], "!", "'")
+    try:
+        np.save(npy_cache, table)
+    except Exception:
+        pass
+    return table
 
 
 def _load_overlay_manifest(path):
@@ -259,17 +290,25 @@ def _build_runtime_vocab():
 
 
 def _filter_runtime_vocab(table):
-    return np.array(list(filter(lambda x: x["OOV_inductive_biases"] != "1", table)), dtype=table.dtype)
+    return table[table["OOV_inductive_biases"] != "1"]
 
 
 _RAW_RUNTIME_VOCAB = _build_runtime_vocab()
 vocab = _filter_runtime_vocab(_RAW_RUNTIME_VOCAB)
-_OVERLAY_MANIFEST = _load_overlay_manifest(os.environ.get("FREQBLIMP_OVERLAY_MANIFEST", DEFAULT_OVERLAY_MANIFEST_PATH))
-ROW_METADATA_BY_SIGNATURE = _merge_metadata(_build_base_row_metadata(vocab), _OVERLAY_MANIFEST)
-ROW_FAMILY_EXPRESSIONS_BY_SIGNATURE = _build_family_expressions(vocab)
-FREQUENCY_CACHE = _load_frequency_cache(os.environ.get("FREQBLIMP_FREQUENCY_CACHE", DEFAULT_FREQUENCY_CACHE_PATH))
-if len(FREQUENCY_CACHE) < len(vocab):
-    FREQUENCY_CACHE = build_frequency_cache(vocab)
+
+# Lazy-loaded structures — only built on first access (avoids O(N) startup cost with large overlays)
+_OVERLAY_MANIFEST_PATH = os.environ.get("FREQBLIMP_OVERLAY_MANIFEST", DEFAULT_OVERLAY_MANIFEST_PATH)
+_OVERLAY_METADATA_REGISTRY = None
+
+_freq_cache_path = os.environ.get("FREQBLIMP_FREQUENCY_CACHE", DEFAULT_FREQUENCY_CACHE_PATH)
+FREQUENCY_CACHE = _load_frequency_cache(_freq_cache_path)
+
+
+def _ensure_overlay_metadata_registry():
+    global _OVERLAY_METADATA_REGISTRY
+    if _OVERLAY_METADATA_REGISTRY is None:
+        _OVERLAY_METADATA_REGISTRY = _load_overlay_manifest(_OVERLAY_MANIFEST_PATH)
+    return _OVERLAY_METADATA_REGISTRY
 
 
 def get_runtime_vocab():
@@ -277,7 +316,19 @@ def get_runtime_vocab():
 
 
 def get_row_metadata(row):
-    return ROW_METADATA_BY_SIGNATURE.get(row_signature(row), {})
+    signature = row_signature(row)
+    metadata = _ensure_overlay_metadata_registry().get(signature)
+    if metadata is not None:
+        return metadata
+    expression = str(row["expression"]).strip()
+    return {
+        "row_signature": signature,
+        "source": "base",
+        "source_lexicon": "blimp",
+        "source_lemma": expression,
+        "inherited_template": None,
+        "validation_status": "base",
+    }
 
 
 def get_row_frequency(row):
@@ -289,11 +340,38 @@ def get_row_frequency(row):
 
 
 def get_family_expressions(row):
-    return tuple(ROW_FAMILY_EXPRESSIONS_BY_SIGNATURE.get(row_signature(row), ()))
+    expression = str(row["expression"]).strip()
+    return (expression,) if expression else ()
 
 
 def get_frequency_cache():
     return dict(FREQUENCY_CACHE)
+
+
+def _ensure_expression_zipf_registry():
+    global _EXPRESSION_ZIPF_REGISTRY
+    if _EXPRESSION_ZIPF_REGISTRY is None:
+        registry = {}
+        for record in FREQUENCY_CACHE.values():
+            expression = str(record.get("expression", "")).strip()
+            if expression and expression not in registry:
+                registry[expression] = float(record.get("zipf_expression") or 0.0)
+        _EXPRESSION_ZIPF_REGISTRY = registry
+    return _EXPRESSION_ZIPF_REGISTRY
+
+
+def get_table_zipf_expression(table):
+    key = _table_cache_key(table)
+    if key not in _TABLE_ZIPF_EXPRESSION_CACHE:
+        registry = _ensure_expression_zipf_registry()
+        expressions = np.asarray(table["expression"], dtype=str)
+        unique_expressions, inverse = np.unique(expressions, return_inverse=True)
+        unique_zipf = np.array(
+            [registry.get(str(expression).strip(), zipf_for_expression(expression)) for expression in unique_expressions],
+            dtype=np.float32,
+        )
+        _TABLE_ZIPF_EXPRESSION_CACHE[key] = unique_zipf[inverse]
+    return _TABLE_ZIPF_EXPRESSION_CACHE[key]
 
 
 def _table_cache_key(table):
@@ -313,9 +391,9 @@ def get_all(label, value, table=vocab):
     """
     key = (label, value, _table_cache_key(table))
     if key not in _GET_ALL_CACHE:
-        # TODO: this should not be based on string equality, but disjunction matching
-        # return np.array(list(filter(lambda x: condition_is_match_disj(value, x[label]), table)), dtype=data_type)
-        _GET_ALL_CACHE[key] = np.array(list(filter(lambda x: x[label] == value, table)), dtype=table.dtype)
+        idx = _get_label_index(label, table)
+        indices = idx.get(str(value))
+        _GET_ALL_CACHE[key] = table[indices] if indices is not None else np.array([], dtype=table.dtype)
     return _GET_ALL_CACHE[key]
 
 def get_all_conjunctive(labels_values, table=vocab):
@@ -325,10 +403,22 @@ def get_all_conjunctive(labels_values, table=vocab):
     """
     key = (tuple(labels_values), _table_cache_key(table))
     if key not in _GET_ALL_CONJ_CACHE:
-        to_return = table
+        # Intersect index sets from smallest to largest (early-exit if any is empty)
+        idx_sets = []
         for label, value in labels_values:
-            to_return = np.array(list(filter(lambda x: x[label] == value, to_return)), dtype=table.dtype)
-        _GET_ALL_CONJ_CACHE[key] = to_return
+            idx = _get_label_index(label, table)
+            arr = idx.get(str(value))
+            if arr is None or len(arr) == 0:
+                _GET_ALL_CONJ_CACHE[key] = np.array([], dtype=table.dtype)
+                return _GET_ALL_CONJ_CACHE[key]
+            idx_sets.append(arr)
+        idx_sets.sort(key=len)
+        result_indices = idx_sets[0]
+        for other in idx_sets[1:]:
+            result_indices = np.intersect1d(result_indices, other, assume_unique=True)
+            if len(result_indices) == 0:
+                break
+        _GET_ALL_CONJ_CACHE[key] = table[result_indices]
     return _GET_ALL_CONJ_CACHE[key]
 
 
@@ -339,18 +429,26 @@ def get_matches_of(row, label, table=vocab):
     :param table: ndarray of vocab items.
     :return: all entries in table that match the selectional restrictions of row as given in label.
     """
-    value = str(np.array(row, dtype=table.dtype)[label])
+    value = str(row[label])
     if value == "":
         pass
     else:
-        key = (row_signature(np.array(row, dtype=table.dtype)), label, _table_cache_key(table))
+        key = (row_signature(row), label, _table_cache_key(table))
         if key not in _GET_MATCHES_OF_CACHE:
-            matches = []
-            values = str(value).split(";")
-            for disjunct in values:
-                k_vs = conj_list(disjunct)
-                matches.extend(list(get_all_conjunctive(k_vs, table)))
-            _GET_MATCHES_OF_CACHE[key] = np.array(matches, dtype=table.dtype)
+            disjuncts = value.split(";")
+            if len(disjuncts) == 1:
+                result = get_all_conjunctive(conj_list(disjuncts[0]), table)
+            else:
+                # Union of disjuncts via boolean mask (avoids duplicates)
+                mask = np.zeros(len(table), dtype=bool)
+                for disjunct in disjuncts:
+                    k_vs = conj_list(disjunct)
+                    conj_mask = np.ones(len(table), dtype=bool)
+                    for lbl, val in k_vs:
+                        conj_mask &= (table[lbl] == val)
+                    mask |= conj_mask
+                result = table[mask]
+            _GET_MATCHES_OF_CACHE[key] = result
         return _GET_MATCHES_OF_CACHE[key]
 
 
@@ -362,11 +460,11 @@ def get_matches_of_conj(rows_labels, table=vocab):
     """
     to_return = table
     for row, label in rows_labels:
-        value = str(np.array(row, dtype=table.dtype)[label])
+        value = str(row[label])
         if value == "":
             pass
         else:
-            to_return = np.array(list(filter(lambda x: is_match_disj(x, value), to_return)), dtype=table.dtype)
+            to_return = get_matches_of(row, label, to_return)
     return to_return
 
 
@@ -377,14 +475,15 @@ def get_matched_by(row, label, table=vocab):
     :param table: ndarray of vocab items.
     :return: all entries in table whose selectional restrictions in label are matched by row.
     """
-    key = (row_signature(np.array(row, dtype=table.dtype)), label, _table_cache_key(table))
+    key = (row_signature(row), label, _table_cache_key(table))
     if key not in _GET_MATCHED_BY_CACHE:
-        matches = []
-        for entry in table:
-            value = str(np.array(entry, dtype=table.dtype)[label])
-            if is_match_disj(row, value):
-                matches.append(entry)
-        _GET_MATCHED_BY_CACHE[key] = np.array(matches, dtype=table.dtype)
+        idx = _get_label_index(label, table)
+        passing_indices = [indices for val, indices in idx.items() if is_match_disj(row, val)]
+        if passing_indices:
+            result_indices = np.concatenate(passing_indices)
+            _GET_MATCHED_BY_CACHE[key] = table[result_indices]
+        else:
+            _GET_MATCHED_BY_CACHE[key] = np.array([], dtype=table.dtype)
     return _GET_MATCHED_BY_CACHE[key]
 
 

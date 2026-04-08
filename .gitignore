@@ -1,4 +1,5 @@
 .DS_Store
+.venv/
 CODEX_README.md
 logs/
 outputs/inductive_biases
@@ -122,4 +123,7 @@ generation_projects/blimp/verb_inventory.summary.json
 # Generated overlay data
 vocabulary_overlay.csv
 vocabulary_overlay_manifest.json
+vocabulary.csv.npy
+vocabulary_overlay.csv.npy
 outputs/cache/
+outputs/blimp_overlay_smoke/

@@ -6,7 +6,7 @@ from typing import Dict, Iterable, Optional
 import numpy as np
 
 from utils.exceptions import FrequencyConstraintError, LexicalGapError
-from utils.frequency import coerce_float, get_row_controlled_pos, normalize_controlled_pos
+from utils.frequency import coerce_float, normalize_controlled_pos
 
 
 @dataclass
@@ -119,55 +119,71 @@ def uniform_choice(set, avoid=None):
     candidates = _without_avoid(set, avoid)
     if len(candidates) == 0:
         raise LexicalGapError("No candidates available for uniform sampling")
-    return _RNG.choice(list(candidates))
+    try:
+        return candidates[_RNG.randrange(len(candidates))]
+    except (TypeError, KeyError, IndexError):
+        pass
+    return _RNG.choice(tuple(candidates))
 
 
 def _is_structured_rows(candidates):
     return hasattr(getattr(candidates, "dtype", None), "names") and candidates.dtype.names is not None
 
 
+def _candidate_controlled_pos(candidates):
+    if not _is_structured_rows(candidates) or len(candidates) == 0:
+        return None
+    names = candidates.dtype.names
+    if "noun" in names and np.all(candidates["noun"] == "1"):
+        return "noun"
+    if "verb" in names and np.all(candidates["verb"] == "1"):
+        return "verb"
+    if "category_2" in names and np.all(np.isin(candidates["category_2"], ("Adj", "adjective"))):
+        return "adjective"
+    return None
+
+
 def _policy_candidates(candidates):
     policy = _ACTIVE_POLICY
     if policy is None or len(candidates) == 0 or not _is_structured_rows(candidates):
-        return None, None, None
-    positions = {get_row_controlled_pos(row) for row in candidates}
-    positions.discard(None)
-    if len(positions) != 1:
-        return None, None, None
-    controlled_pos = next(iter(positions))
+        return None, None, None, None, None
+    controlled_pos = _candidate_controlled_pos(candidates)
+    if controlled_pos is None:
+        return None, None, None, None, None
     if controlled_pos not in policy.controlled_pos_set:
-        return None, None, None
-    from utils.vocab_table import get_row_frequency
-    eligible = []
-    for row in candidates:
-        frequency = get_row_frequency(row)
-        zipf_value = coerce_float(frequency.get("zipf_expression")) or 0.0
-        lower, upper = policy.bounds_for(controlled_pos)
-        if lower is not None and zipf_value < lower:
-            continue
-        if upper is not None and zipf_value > upper:
-            continue
-        eligible.append((row, frequency))
-    if not eligible:
+        return None, None, None, None, None
+    from utils.vocab_table import get_table_zipf_expression
+    zipf_values = get_table_zipf_expression(candidates)
+    lower, upper = policy.bounds_for(controlled_pos)
+    eligible_mask = np.ones(len(candidates), dtype=bool)
+    if lower is not None:
+        eligible_mask &= zipf_values >= lower
+    if upper is not None:
+        eligible_mask &= zipf_values <= upper
+    if not np.any(eligible_mask):
         lower, upper = policy.bounds_for(controlled_pos)
         raise FrequencyConstraintError(
             "No %s candidates satisfy zipf bounds min=%s max=%s from %d candidates"
             % (controlled_pos, lower, upper, len(candidates))
         )
-    return controlled_pos, eligible, policy
+    eligible_indices = np.flatnonzero(eligible_mask)
+    return controlled_pos, candidates, eligible_indices, zipf_values[eligible_indices], policy
 
 
-def _weighted_choice(eligible, policy):
-    if not policy.zipf_weighted_sampling or len(eligible) == 1:
-        return _RNG.choice(eligible)
+def _weighted_choice(candidates, eligible_indices, eligible_zipf, policy):
+    if len(eligible_indices) == 1:
+        return candidates[eligible_indices[0]], float(eligible_zipf[0])
+    if not policy.zipf_weighted_sampling:
+        position = _RNG.randrange(len(eligible_indices))
+        return candidates[eligible_indices[position]], float(eligible_zipf[position])
     weights = []
-    for _row, frequency in eligible:
-        zipf_value = coerce_float(frequency.get("zipf_expression")) or 0.0
-        base = 10 ** zipf_value if zipf_value > 0.0 else 0.001
+    for zipf_value in eligible_zipf:
+        base = 10 ** float(zipf_value) if float(zipf_value) > 0.0 else 0.001
         if policy.zipf_temp and policy.zipf_temp > 0:
             base = base ** (1.0 / policy.zipf_temp)
         weights.append(base if base > 0 else 0.001)
-    return _RNG.choices(eligible, weights=weights, k=1)[0]
+    position = _RNG.choices(range(len(eligible_indices)), weights=weights, k=1)[0]
+    return candidates[eligible_indices[position]], float(eligible_zipf[position])
 
 
 def _record_trace(row, frequency, controlled_pos, candidate_count, eligible_count, policy):
@@ -206,9 +222,10 @@ def choice(set, avoid=None):
     candidates = _without_avoid(set, avoid)
     if len(candidates) == 0:
         raise LexicalGapError("No candidates available for policy-aware sampling")
-    controlled_pos, eligible, policy = _policy_candidates(candidates)
-    if eligible is None:
+    controlled_pos, policy_candidates, eligible_indices, eligible_zipf, policy = _policy_candidates(candidates)
+    if policy_candidates is None:
         return uniform_choice(candidates)
-    row, frequency = _weighted_choice(eligible, policy)
-    _record_trace(row, frequency, controlled_pos, len(candidates), len(eligible), policy)
+    row, zipf_value = _weighted_choice(policy_candidates, eligible_indices, eligible_zipf, policy)
+    frequency = {"zipf_expression": zipf_value}
+    _record_trace(row, frequency, controlled_pos, len(candidates), len(eligible_indices), policy)
     return row

@@ -296,27 +296,31 @@ def noun_args_from_noun(noun, frequent=True, allow_recursion=False, allow_quanti
     :return: a dict containing all the arguments of the noun: {det: x1, args: [arg_1, ..., arg_n]}
     """
     args = {}
-    determiner_space = all_frequent if frequent else vocab
-    noun_space = _content_sample_space(frequent, "noun")
+    if noun["category"] == "NP":
+        return {"det": [], "args": []}
+
+    determiner_space = all_frequent_determiners if frequent else all_determiners
     if avoid is not None:
-        noun_space = np.setdiff1d(noun_space, avoid)
         determiner_space = np.setdiff1d(determiner_space, avoid)
     if allow_quantifiers:
-        args["det"] = choice(get_matched_by(noun, "arg_1", np.intersect1d(all_determiners, determiner_space)))
+        args["det"] = choice(get_matched_by(noun, "arg_1", determiner_space))
     else:
-        args["det"] = choice(get_matched_by(noun, "arg_1", get_all("quantifier", "0", np.intersect1d(all_determiners, determiner_space))))
+        args["det"] = choice(get_matched_by(noun, "arg_1", get_all("quantifier", "0", determiner_space)))
     if noun["category"] == "N":
         args["args"] = []
-    if noun["category"] == "NP":
-        args["det"] = []
-        args["args"] = []
     if noun["category"] == "N/NP":
+        noun_space = _content_sample_space(frequent, "noun")
+        if avoid is not None:
+            noun_space = np.setdiff1d(noun_space, avoid)
         if allow_recursion:
             obj = N_to_DP_mutate(choice(get_matches_of(noun, "arg_1", np.intersect1d(all_nominals, noun_space))))
         else:
             obj = N_to_DP_mutate(choice(get_matches_of(noun, "arg_1", np.intersect1d(all_nouns, noun_space))))
         args["args"] = [obj]
     if noun["category"] == "N\\NP[poss]":
+        noun_space = _content_sample_space(frequent, "noun")
+        if avoid is not None:
+            noun_space = np.setdiff1d(noun_space, avoid)
         if allow_recursion:
             poss = make_possessive(N_to_DP_mutate(choice(get_matches_of(noun, "arg_1", np.intersect1d(all_nominals, noun_space)))))
         else:
