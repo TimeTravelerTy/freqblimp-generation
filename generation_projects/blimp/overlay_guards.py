@@ -4,7 +4,7 @@ from typing import Iterable, Optional, Sequence
 import numpy as np
 
 from utils.randomize import get_active_policy
-from utils.vocab_table import get_all
+from utils.vocab_table import get_all, get_table_zipf_expression
 
 
 _SUBJECT_RAISING_VERBS = (
@@ -125,6 +125,27 @@ GUARD_REGISTRY = {
 def overlay_enabled() -> bool:
     policy = get_active_policy()
     return bool(policy and getattr(policy, "overlay_enabled", False))
+
+
+def filter_rows_for_active_zipf(table, controlled_pos: str, fallback_on_empty: bool=True):
+    policy = get_active_policy()
+    if policy is None or len(table) == 0:
+        return table
+    if controlled_pos not in getattr(policy, "controlled_pos_set", set()):
+        return table
+    lower, upper = policy.bounds_for(controlled_pos)
+    if lower is None and upper is None:
+        return table
+    zipf_values = get_table_zipf_expression(table)
+    mask = np.ones(len(table), dtype=bool)
+    if lower is not None:
+        mask &= zipf_values >= lower
+    if upper is not None:
+        mask &= zipf_values <= upper
+    filtered = table[mask]
+    if len(filtered) > 0 or not fallback_on_empty:
+        return filtered
+    return table
 
 
 def raising_verb_list_for_uid(uid: str) -> Sequence[str]:

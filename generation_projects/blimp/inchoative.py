@@ -3,6 +3,8 @@ from utils.constituent_building import *
 from utils.conjugate import *
 from utils.randomize import choice
 
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+
 class Generator(data_generator.BenchmarkGenerator):
     def __init__(self):
         super().__init__(field="syntax",
@@ -24,22 +26,31 @@ class Generator(data_generator.BenchmarkGenerator):
         # The lamp has pained.
         # Subj     Aux V_trans
 
-        V_inch = choice(self.alternating_verbs)
-        if V_inch["category"] == "(S\\NP)/NP":
-            if V_inch["3sg"] == "1":
-                Subj = N_to_DP_mutate(choice(get_matches_of(V_inch, "arg_2", self.all_singulars)))
-            elif V_inch["pres"] == "1":
-                Subj = N_to_DP_mutate(choice(get_matches_of(V_inch, "arg_2", self.all_plurals)))
+        while True:
+            V_inch = choice(self.alternating_verbs)
+            if V_inch["category"] == "(S\\NP)/NP":
+                if V_inch["3sg"] == "1":
+                    Subj = N_to_DP_mutate(choice(get_matches_of(V_inch, "arg_2", self.all_singulars)))
+                elif V_inch["pres"] == "1":
+                    Subj = N_to_DP_mutate(choice(get_matches_of(V_inch, "arg_2", self.all_plurals)))
+                else:
+                    Subj = N_to_DP_mutate(choice(get_matches_of(V_inch, "arg_2", all_nominals)))
             else:
-                Subj = N_to_DP_mutate(choice(get_matches_of(V_inch, "arg_2", all_nominals)))
-        else:
-            Subj = N_to_DP_mutate(choice(get_matches_of(V_inch, "arg_1")))
-        Aux = return_aux(V_inch, Subj)
-        if Subj["sg"] == "1":
-            safe_verbs = np.intersect1d(self.non_alternating_transitives, all_possibly_singular_verbs)
-        else:
-            safe_verbs = np.intersect1d(self.non_alternating_transitives, all_possibly_plural_verbs)
-        V_trans = choice(get_matched_by(Subj, "arg_2", get_matches_of(Aux, "arg_2", safe_verbs)))
+                Subj = N_to_DP_mutate(choice(get_matches_of(V_inch, "arg_1")))
+            Aux = return_aux(V_inch, Subj)
+            if Subj["sg"] == "1":
+                safe_verbs = np.intersect1d(self.non_alternating_transitives, all_possibly_singular_verbs)
+            else:
+                safe_verbs = np.intersect1d(self.non_alternating_transitives, all_possibly_plural_verbs)
+            bad_candidates = filter_rows_for_active_zipf(
+                get_matched_by(Subj, "arg_2", get_matches_of(Aux, "arg_2", safe_verbs)),
+                "verb",
+                fallback_on_empty=False,
+            )
+            if len(bad_candidates) == 0:
+                continue
+            V_trans = choice(bad_candidates)
+            break
 
         data = {
             "sentence_good": "%s %s %s." % (Subj[0], Aux[0], V_inch[0]),

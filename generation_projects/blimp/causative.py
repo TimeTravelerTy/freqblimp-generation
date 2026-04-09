@@ -3,6 +3,7 @@ from utils.constituent_building import *
 from utils.conjugate import *
 from utils.randomize import choice
 
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
 
 class CSCGenerator(data_generator.BenchmarkGenerator):
     def __init__(self):
@@ -25,26 +26,35 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
         # The bear has slipped   the lamp.
         # Subj     Aux V_intrans obj
 
-        V_cause = choice(self.alternating_verbs)
-        if V_cause["category"] == "S\\NP":
-            Obj = N_to_DP_mutate(choice(get_matches_of(V_cause, "arg_1", all_nominals)))
-            if V_cause["3sg"] == "1":
-                Subj = N_to_DP_mutate(choice(np.intersect1d(all_animate_nouns, self.all_singulars)))
-            elif V_cause["pres"] == "1":
-                Subj = N_to_DP_mutate(choice(np.intersect1d(all_animate_nouns, self.all_plurals)))
+        while True:
+            V_cause = choice(self.alternating_verbs)
+            if V_cause["category"] == "S\\NP":
+                Obj = N_to_DP_mutate(choice(get_matches_of(V_cause, "arg_1", all_nominals)))
+                if V_cause["3sg"] == "1":
+                    Subj = N_to_DP_mutate(choice(np.intersect1d(all_animate_nouns, self.all_singulars)))
+                elif V_cause["pres"] == "1":
+                    Subj = N_to_DP_mutate(choice(np.intersect1d(all_animate_nouns, self.all_plurals)))
+                else:
+                    Subj = N_to_DP_mutate(choice(all_animate_nouns))
             else:
-                Subj = N_to_DP_mutate(choice(all_animate_nouns))
-        else:
-            Subj = N_to_DP_mutate(choice(get_matches_of(V_cause, "arg_1", all_nominals)))
-            Obj = N_to_DP_mutate(choice(get_matches_of(V_cause, "arg_2", all_nominals)))
+                Subj = N_to_DP_mutate(choice(get_matches_of(V_cause, "arg_1", all_nominals)))
+                Obj = N_to_DP_mutate(choice(get_matches_of(V_cause, "arg_2", all_nominals)))
 
-        Aux = return_aux(V_cause, Subj)
+            Aux = return_aux(V_cause, Subj)
 
-        if Subj["sg"] == "1":
-            safe_verbs = np.intersect1d(self.non_alternating_intransitives, all_possibly_singular_verbs)
-        else:
-            safe_verbs = np.intersect1d(self.non_alternating_intransitives, all_possibly_plural_verbs)
-        V_intrans = choice(get_matched_by(Obj, "arg_1", get_matches_of(Aux, "arg_2", safe_verbs)))
+            if Subj["sg"] == "1":
+                safe_verbs = np.intersect1d(self.non_alternating_intransitives, all_possibly_singular_verbs)
+            else:
+                safe_verbs = np.intersect1d(self.non_alternating_intransitives, all_possibly_plural_verbs)
+            bad_candidates = filter_rows_for_active_zipf(
+                get_matched_by(Obj, "arg_1", get_matches_of(Aux, "arg_2", safe_verbs)),
+                "verb",
+                fallback_on_empty=False,
+            )
+            if len(bad_candidates) == 0:
+                continue
+            V_intrans = choice(bad_candidates)
+            break
 
         data = {
             "sentence_good": "%s %s %s %s." % (Subj[0], Aux[0], V_cause[0], Obj[0]),

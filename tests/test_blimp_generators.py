@@ -2,11 +2,20 @@ import importlib
 import inspect
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 from generation_projects.blimp import build_overlay as build_overlay_module
+from generation_projects.blimp.overlay_coverage import (
+    DONE_OVERLAY_CASES,
+    DONE_PARADIGMS,
+    REMAINING_CONTENT_WORD_TARGETS,
+    RUNTIME_VERIFIED_WITHOUT_NEW_HOOKS,
+    SKIP_FOR_OVERLAY,
+)
 from utils import data_generator
 from utils.randomize import SamplingPolicy, clear_sampling_policy, configure_sampling_policy, set_trace_recording_enabled
 from utils.vocab_table import clear_query_caches
@@ -34,7 +43,7 @@ class BlimpGeneratorSmokeTests(unittest.TestCase):
 
     def test_all_blimp_generators_construct(self):
         root = Path("generation_projects/blimp")
-        ignored = {"__init__", "run", "build_overlay", "sbatch_generator", "prune_flagged_verb_frames", "overlay_guards"}
+        ignored = {"__init__", "run", "build_overlay", "sbatch_generator", "prune_flagged_verb_frames", "overlay_guards", "overlay_coverage"}
         failures = []
         for path in sorted(root.glob("*.py")):
             stem = path.stem
@@ -63,6 +72,10 @@ class BlimpGeneratorSmokeTests(unittest.TestCase):
 
 
 class BlimpOverlaySmokeTests(unittest.TestCase):
+    _STEM_BY_UID = {
+        "animate_subject_trans": "animate_subject_transitive",
+    }
+
     @classmethod
     def setUpClass(cls):
         cls._tmpdir = tempfile.TemporaryDirectory()
@@ -121,12 +134,52 @@ class BlimpOverlaySmokeTests(unittest.TestCase):
 
     def _generate_one_pair_with_overlay(self, stem, controlled_pos, zipf_min=1.0, zipf_max=3.2):
         self._configure_overlay_policy(controlled_pos, zipf_min=zipf_min, zipf_max=zipf_max)
-        generator = BlimpGeneratorSmokeTests()._build_generator(stem)
+        generator = BlimpGeneratorSmokeTests()._build_generator(self._STEM_BY_UID.get(stem, stem))
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / ("%s.jsonl" % stem)
             generator.generate_paradigm(number_to_generate=1, absolute_path=str(output_path))
             payload = json.loads(output_path.read_text().splitlines()[0])
         return payload
+
+    def _generate_pairs_via_cli_with_overlay(self, stem, controlled_pos, number_to_generate=3):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / ("%s.jsonl" % stem)
+            cmd = [
+                sys.executable,
+                "-m",
+                "generation_projects.blimp.run",
+                stem,
+                "--number-to-generate",
+                str(number_to_generate),
+                "--output-path",
+                str(output_path),
+                "--use-overlay",
+                "--overlay-path",
+                self.overlay_path,
+                "--overlay-manifest-path",
+                self.manifest_path,
+                "--frequency-cache-path",
+                self.cache_path,
+                "--zipf-min-all",
+                "1.0",
+                "--zipf-max-all",
+                "3.2",
+                "--controlled-pos",
+                *controlled_pos,
+                "--no-progress",
+            ]
+            subprocess.run(cmd, check=True, capture_output=True, text=True)
+            return [json.loads(line) for line in output_path.read_text().splitlines() if line.strip()]
+
+    def _all_blimp_uids(self):
+        root = Path("generation_projects/blimp")
+        ignored = {"__init__", "run", "build_overlay", "sbatch_generator", "prune_flagged_verb_frames", "overlay_guards", "overlay_coverage"}
+        helper = BlimpGeneratorSmokeTests()
+        return sorted(
+            helper._build_generator(path.stem).uid
+            for path in root.glob("*.py")
+            if path.stem not in ignored
+        )
 
     def test_overlay_manifest_contains_special_bundles(self):
         with open(self.manifest_path) as handle:
@@ -146,39 +199,51 @@ class BlimpOverlaySmokeTests(unittest.TestCase):
                 self.assertIn(bundle, bundles)
 
     def test_overlay_targeted_paradigms_generate(self):
-        cases = (
-            ("passive_1", ("verb",), 1.0, 3.2),
-            ("passive_2", ("verb",), 1.0, 3.2),
-            ("drop_argument", ("verb",), 1.0, 3.2),
-            ("causative", ("verb",), 1.0, 3.2),
-            ("inchoative", ("verb",), 1.0, 3.2),
-            ("animate_subject_passive", ("noun",), 1.0, 3.2),
-            ("animate_subject_transitive", ("noun",), 1.0, 3.2),
-            ("existential_there_subject_raising", ("adjective",), 1.0, 3.2),
-            ("existential_there_object_raising", ("verb",), 1.0, 3.2),
-            ("expletive_it_object_raising", ("verb",), 1.0, 3.2),
-            ("tough_vs_raising_1", ("adjective",), 1.0, 3.2),
-            ("tough_vs_raising_2", ("adjective",), 1.0, 3.2),
-            ("existential_there_quantifiers_1", ("noun",), 1.0, 3.2),
-            ("existential_there_quantifiers_2", ("noun",), 1.0, 3.2),
-            ("superlative_quantifiers_1", ("noun",), 1.0, 3.2),
-            ("superlative_quantifiers_2", ("noun",), 1.0, 3.2),
-            ("ellipsis_n_bar_1", ("noun", "adjective"), 1.0, 3.2),
-            ("ellipsis_n_bar_2", ("noun", "adjective"), 1.0, 3.2),
-            ("transitive", ("verb",), 1.0, 3.2),
-            ("intransitive", ("verb",), 1.0, 3.2),
-        )
-        for stem, controlled_pos, zipf_min, zipf_max in cases:
+        for stem, controlled_pos in DONE_OVERLAY_CASES:
             with self.subTest(generator=stem):
                 payload = self._generate_one_pair_with_overlay(
                     stem,
                     controlled_pos=controlled_pos,
-                    zipf_min=zipf_min,
-                    zipf_max=zipf_max,
+                    zipf_min=1.0,
+                    zipf_max=3.2,
                 )
                 self.assertIn("sentence_good", payload)
                 self.assertIn("sentence_bad", payload)
                 self.assertNotEqual(payload["sentence_good"], payload["sentence_bad"])
+
+    def test_overlay_coverage_buckets_partition_known_uids(self):
+        covered = set(DONE_PARADIGMS) | set(REMAINING_CONTENT_WORD_TARGETS) | set(SKIP_FOR_OVERLAY)
+        self.assertEqual(set(self._all_blimp_uids()), covered)
+        self.assertEqual(set(), set(DONE_PARADIGMS) & set(REMAINING_CONTENT_WORD_TARGETS))
+        self.assertEqual(set(), set(DONE_PARADIGMS) & set(SKIP_FOR_OVERLAY))
+        self.assertEqual(set(), set(REMAINING_CONTENT_WORD_TARGETS) & set(SKIP_FOR_OVERLAY))
+
+    def test_overlay_coverage_has_no_remaining_content_word_targets(self):
+        self.assertEqual(REMAINING_CONTENT_WORD_TARGETS, ())
+
+    def test_runtime_verified_no_hook_cases_expand_with_overlay(self):
+        controlled_pos_by_uid = {
+            "ellipsis_n_bar_1": ("noun", "adjective"),
+            "transitive": ("verb",),
+            "intransitive": ("verb",),
+        }
+        for uid in RUNTIME_VERIFIED_WITHOUT_NEW_HOOKS:
+            with self.subTest(generator=uid):
+                payloads = self._generate_pairs_via_cli_with_overlay(
+                    uid,
+                    controlled_pos=controlled_pos_by_uid[uid],
+                    number_to_generate=3,
+                )
+                self.assertTrue(payloads)
+                self.assertTrue(
+                    any(
+                        any(choice.get("source") == "overlay" for choice in payload.get("meta", {}).get("good_choices", ()))
+                        or any(choice.get("source") == "overlay" for choice in payload.get("meta", {}).get("bad_choices", ()))
+                        for payload in payloads
+                    )
+                )
+                for payload in payloads:
+                    self.assertNotEqual(payload["sentence_good"], payload["sentence_bad"])
 
 
 if __name__ == "__main__":

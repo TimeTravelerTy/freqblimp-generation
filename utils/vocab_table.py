@@ -21,6 +21,7 @@ _GET_MATCHES_OF_CACHE = {}
 _GET_MATCHED_BY_CACHE = {}
 _TABLE_LABEL_INDEX = {}  # (label, table_key) -> {str_value -> np.array of row indices}
 _TABLE_ZIPF_EXPRESSION_CACHE = {}
+_TABLE_ROW_SIGNATURE_CACHE = {}
 _EXPRESSION_ZIPF_REGISTRY = None
 
 
@@ -31,6 +32,7 @@ def clear_query_caches():
     _GET_MATCHED_BY_CACHE.clear()
     _TABLE_LABEL_INDEX.clear()
     _TABLE_ZIPF_EXPRESSION_CACHE.clear()
+    _TABLE_ROW_SIGNATURE_CACHE.clear()
 
 
 def _get_label_index(label, table):
@@ -85,7 +87,8 @@ def _load_overlay_manifest(path):
     if not path or not os.path.exists(path):
         return {}
     try:
-        payload = json.load(open(path))
+        with open(path) as handle:
+            payload = json.load(handle)
     except Exception:
         return {}
     if isinstance(payload, dict):
@@ -104,17 +107,25 @@ def _load_overlay_manifest(path):
     return registry
 
 
+def _get_table_row_signatures(table):
+    key = _table_cache_key(table)
+    if key not in _TABLE_ROW_SIGNATURE_CACHE:
+        _TABLE_ROW_SIGNATURE_CACHE[key] = tuple(row_signature(row) for row in table)
+    return _TABLE_ROW_SIGNATURE_CACHE[key]
+
+
 def _build_base_row_metadata(table):
+    signatures = _get_table_row_signatures(table)
     return {
-        row_signature(row): {
-            "row_signature": row_signature(row),
+        signature: {
+            "row_signature": signature,
             "source": "base",
             "source_lexicon": "blimp",
             "source_lemma": str(row["expression"]),
             "inherited_template": None,
             "validation_status": "base",
         }
-        for row in table
+        for row, signature in zip(table, signatures)
     }
 
 
@@ -127,6 +138,7 @@ def _merge_metadata(base_metadata, overlay_metadata):
 def _build_family_expressions(table):
     by_root = defaultdict(set)
     by_expression = defaultdict(set)
+    signatures = _get_table_row_signatures(table)
     for row in table:
         expression = str(row["expression"]).strip()
         if expression:
@@ -141,8 +153,7 @@ def _build_family_expressions(table):
         if pluralform:
             by_expression[expression].add(pluralform)
     family = {}
-    for row in table:
-        signature = row_signature(row)
+    for row, signature in zip(table, signatures):
         expressions = set()
         expression = str(row["expression"]).strip()
         if expression:
@@ -163,26 +174,27 @@ def _build_family_expressions(table):
 def _build_family_rows(table):
     by_root = defaultdict(list)
     by_expression = defaultdict(list)
-    for row in table:
+    signatures = _get_table_row_signatures(table)
+    for idx, row in enumerate(table):
         expression = str(row["expression"]).strip()
         if expression:
-            by_expression[expression].append(row)
+            by_expression[expression].append(idx)
         root = str(row["root"]).strip()
         if root:
-            by_root[root].append(row)
+            by_root[root].append(idx)
     family_rows = {}
-    for row in table:
-        signature = row_signature(row)
-        members = []
-        seen = set()
+    for idx, row in enumerate(table):
+        signature = signatures[idx]
+        member_indices = []
+        seen_signatures = set()
 
-        def _extend(rows_to_add):
-            for candidate in rows_to_add:
-                candidate_signature = row_signature(candidate)
-                if candidate_signature in seen:
+        def _extend(indices_to_add):
+            for candidate_idx in indices_to_add:
+                candidate_signature = signatures[candidate_idx]
+                if candidate_signature in seen_signatures:
                     continue
-                seen.add(candidate_signature)
-                members.append(candidate)
+                seen_signatures.add(candidate_signature)
+                member_indices.append(candidate_idx)
 
         expression = str(row["expression"]).strip()
         if expression:
@@ -196,7 +208,7 @@ def _build_family_rows(table):
             _extend(by_expression.get(singularform, ()))
         if pluralform:
             _extend(by_expression.get(pluralform, ()))
-        family_rows[signature] = tuple(members)
+        family_rows[signature] = tuple(table[candidate_idx] for candidate_idx in member_indices)
     return family_rows
 
 
@@ -224,23 +236,31 @@ def _lemma_expression_for_row(row, family_rows):
 
 
 def build_frequency_cache(table):
+    signatures = _get_table_row_signatures(table)
     family_expressions = _build_family_expressions(table)
     family_rows = _build_family_rows(table)
+    zipf_cache = {}
+
+    def _zipf(expression):
+        expression = str(expression).strip()
+        if expression not in zipf_cache:
+            zipf_cache[expression] = zipf_for_expression(expression)
+        return zipf_cache[expression]
+
     cache = {}
-    for row in table:
-        signature = row_signature(row)
+    for row, signature in zip(table, signatures):
         expression = str(row["expression"]).strip()
         family = family_expressions.get(signature, ())
         lemma_expression = _lemma_expression_for_row(row, family_rows.get(signature, ()))
-        family_zipf = [zipf_for_expression(expr) for expr in family if expr]
+        family_zipf = [_zipf(expr) for expr in family if expr]
         family_zipf = [value for value in family_zipf if value > 0.0]
         cache[signature] = {
             "row_signature": signature,
             "expression": expression,
-            "zipf_expression": zipf_for_expression(expression),
+            "zipf_expression": _zipf(expression),
             "lemma_expression": lemma_expression,
-            "zipf_lemma": zipf_for_expression(lemma_expression),
-            "zipf_root": min(family_zipf) if family_zipf else zipf_for_expression(expression),
+            "zipf_lemma": _zipf(lemma_expression),
+            "zipf_root": min(family_zipf) if family_zipf else _zipf(expression),
         }
     return cache
 
@@ -253,14 +273,15 @@ def write_frequency_cache(cache, path=DEFAULT_FREQUENCY_CACHE_PATH):
         "rows": list(cache.values()),
     }
     with open(path, "w") as handle:
-        json.dump(payload, handle, indent=2, sort_keys=True)
+        json.dump(payload, handle, separators=(",", ":"))
 
 
 def _load_frequency_cache(path):
     if not path or not os.path.exists(path):
         return {}
     try:
-        payload = json.load(open(path))
+        with open(path) as handle:
+            payload = json.load(handle)
     except Exception:
         return {}
     if isinstance(payload, dict):

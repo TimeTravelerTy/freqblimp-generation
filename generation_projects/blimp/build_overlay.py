@@ -905,6 +905,27 @@ def _make_verb_rows(lemma, template_family, template_label, suffix_token=None):
     return rows
 
 
+def _apply_argument_structure_overrides(rows, entry):
+    frame_types = set(entry.get("frame_types") or ())
+    has_intr = "intr" in frame_types
+    has_trans = "trans" in frame_types
+    if not has_intr and not has_trans:
+        return rows
+    for row in rows:
+        if row.get("verb") != "1":
+            continue
+        category = row.get("category")
+        if category == "S\\NP" and has_intr:
+            row["causative"] = "1"
+            if row.get("inchoative", "") == "":
+                row["inchoative"] = "0"
+        elif category == "(S\\NP)/NP" and has_trans:
+            row["inchoative"] = "1"
+            if row.get("causative", "") == "":
+                row["causative"] = "0"
+    return rows
+
+
 def _base_runtime_table(base_rows, overlay_rows):
     import numpy as np
     return np.array(
@@ -1120,6 +1141,7 @@ def build_overlay(args):
             for sig_family in sig_families:
                 template_label = sig_family[0]["root"]
                 new_rows = _make_verb_rows(lemma, sig_family, template_label, suffix_token=suffix_token)
+                new_rows = _apply_argument_structure_overrides(new_rows, entry)
                 if not new_rows:
                     saw_inflection_failure = True
                     continue
@@ -1156,6 +1178,7 @@ def build_overlay(args):
                 for special_family, special_suffix in special_families:
                     template_label = special_family[0]["root"] or special_key
                     new_rows = _make_verb_rows(lemma, special_family, template_label, suffix_token=special_suffix)
+                    new_rows = _apply_argument_structure_overrides(new_rows, entry)
                     if not new_rows:
                         saw_inflection_failure = True
                         continue
@@ -1314,7 +1337,7 @@ def build_overlay(args):
     manifest_path = Path(args.manifest_path)
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     with open(manifest_path, "w") as handle:
-        json.dump({"rows": manifest_rows}, handle, indent=2, sort_keys=True)
+        json.dump({"rows": manifest_rows}, handle, separators=(",", ":"))
     runtime_table = _base_runtime_table(_BASE_ROWS, overlay_rows)
     write_frequency_cache(build_frequency_cache(runtime_table), args.frequency_cache_path)
     if args.audit_path:
@@ -1348,7 +1371,7 @@ def build_overlay(args):
             "rejected": audit["rejected"],
         }
         with open(audit_path, "w") as handle:
-            json.dump(audit_payload, handle, indent=2, sort_keys=True)
+            json.dump(audit_payload, handle, separators=(",", ":"))
 
 
 def build_parser():
