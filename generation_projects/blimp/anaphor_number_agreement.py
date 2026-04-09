@@ -5,6 +5,8 @@ from utils.randomize import choice
 from functools import reduce
 from utils.vocab_sets import *
 
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+
 class AnaphorGenerator(data_generator.BenchmarkGenerator):
     def __init__(self):
         super().__init__(field="morphology",
@@ -32,11 +34,11 @@ class AnaphorGenerator(data_generator.BenchmarkGenerator):
 
         if random.choice([True, False]):
             V1 = choice(self.all_plural_reflexive_predicates)
-            N1 = choice(get_matches_of(V1, "arg_1", get_matches_of(V1, "arg_2", self.all_safe_plural_nouns)))
+            N1 = choice(filter_rows_for_active_zipf(get_matches_of(V1, "arg_1", get_matches_of(V1, "arg_2", self.all_safe_plural_nouns)), "noun"))
             refl_mismatch = choice(self.all_singular_reflexives)
         else:
             V1 = choice(self.all_singular_reflexive_predicates)
-            N1 = choice(get_matches_of(V1, "arg_1", get_matches_of(V1, "arg_2", self.all_safe_singular_nouns)))
+            N1 = choice(filter_rows_for_active_zipf(get_matches_of(V1, "arg_1", get_matches_of(V1, "arg_2", self.all_safe_singular_nouns)), "noun"))
             refl_mismatch = self.plural_reflexive
         N1 = N_to_DP_mutate(N1)
         refl_match = choice(get_matched_by(N1, "arg_1", all_reflexives))

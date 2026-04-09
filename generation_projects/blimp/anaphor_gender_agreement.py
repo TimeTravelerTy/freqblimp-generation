@@ -5,6 +5,8 @@ from utils.randomize import choice
 from functools import reduce
 from utils.vocab_sets import *
 
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+
 class AnaphorGenerator(data_generator.BenchmarkGenerator):
     def __init__(self):
         super().__init__(
@@ -28,7 +30,7 @@ class AnaphorGenerator(data_generator.BenchmarkGenerator):
         # N1   V1    refl_mismatch
 
         V1 = choice(all_refl_preds)
-        N1 = N_to_DP_mutate(choice(get_matches_of(V1, "arg_1", get_matches_of(V1, "arg_2", self.all_safe_nouns))))
+        N1 = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V1, "arg_1", get_matches_of(V1, "arg_2", self.all_safe_nouns)), "noun")))
         refl_match = choice(get_matched_by(N1, "arg_1", all_reflexives))
         refl_mismatch = choice(np.setdiff1d(self.all_singular_reflexives, [refl_match]))
 

@@ -4,6 +4,8 @@ from utils.conjugate import *
 from utils.vocab_sets import *
 from functools import reduce
 
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+
 class AgreementGenerator(data_generator.BenchmarkGenerator):
     def __init__(self):
         super().__init__(field="morphology",
@@ -31,7 +33,7 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
         #     N1  aux_nonagree V1_nonagree   args
 
         N1 = N_to_DP_mutate(choice(self.safe_nouns))
-        V1_agree = choice(get_matched_by(N1, "arg_1", self.safe_verbs))
+        V1_agree = choice(filter_rows_for_active_zipf(get_matched_by(N1, "arg_1", self.safe_verbs), "verb"))
         if V1_agree["pres"] == "1":
             V1_nonagree = get_mismatch_verb(V1_agree)
         else:

@@ -3,6 +3,8 @@ from utils.constituent_building import *
 from utils.conjugate import *
 from utils.randomize import choice
 
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+
 class CSCGenerator(data_generator.BenchmarkGenerator):
     def __init__(self):
         super().__init__(field="syntax",
@@ -23,16 +25,16 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
         # wh  Aux_mat Obj  V_mat Subj    Rel  Aux_emb V_emb
 
         V_mat = choice(get_all("finite", "0", self.predicates))
-        Subj = N_to_DP_mutate(choice(
+        Subj = N_to_DP_mutate(choice(filter_rows_for_active_zipf(
             get_matches_of(V_mat, "arg_2",
-                           get_matches_of(V_mat, "arg_1", self.safe_subjs))))
+                           get_matches_of(V_mat, "arg_1", self.safe_subjs)), "noun")))
         Aux_mat = return_aux(V_mat, Subj)
         V_emb = choice(get_matched_by(Subj, "arg_1", self.predicates))
         Aux_emb = return_aux(V_emb, Subj)
-        Obj = N_to_DP_mutate(choice(
+        Obj = N_to_DP_mutate(choice(filter_rows_for_active_zipf(
             get_matches_of(V_emb, "arg_2",
                            get_matches_of(V_mat, "arg_1",
-                                          get_matches_of(Aux_mat, "arg_1", all_nominals)))))
+                                          get_matches_of(Aux_mat, "arg_1", all_nominals))), "noun")))
         Wh = choice(get_matches_of(V_mat, "arg_2",
                                    get_matches_of(V_emb, "arg_2", all_wh_words)))
         Rel = choice(get_matched_by(Subj, "arg_1", all_relativizers))

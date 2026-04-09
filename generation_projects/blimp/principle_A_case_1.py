@@ -4,6 +4,8 @@ from utils.conjugate import *
 from utils.randomize import choice
 from utils.vocab_sets import *
 
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+
 class BindingGenerator(data_generator.BenchmarkGenerator):
     def __init__(self):
         super().__init__(field="syntax_semantics",
@@ -21,12 +23,12 @@ class BindingGenerator(data_generator.BenchmarkGenerator):
         # John thinks  himself      saw     Mary
         # N1   V1      refl_match   Vembed  N2
 
-        V1 = choice(all_embedding_verbs)
-        N1 = N_to_DP_mutate(choice(get_matches_of(V1, "arg_1", self.all_safe_nouns)))
-        Vembed = choice(get_matched_by(N1, "arg_1", all_transitive_verbs))
+        V1 = choice(filter_rows_for_active_zipf(all_embedding_verbs, "verb"))
+        N1 = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V1, "arg_1", self.all_safe_nouns), "noun")))
+        Vembed = choice(filter_rows_for_active_zipf(get_matched_by(N1, "arg_1", all_transitive_verbs), "verb"))
         refl_match = choice(get_matched_by(N1, "arg_1", all_reflexives))
         pro_match = choice(get_matched_by(N1, "arg_1", all_NOMpronouns))
-        N2 = N_to_DP_mutate(choice(get_matches_of(Vembed, "arg_2", all_nouns)))
+        N2 = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(Vembed, "arg_2", all_nouns), "noun")))
         V1 = conjugate(V1, N1)
         Vembed = conjugate(Vembed, N1)
 

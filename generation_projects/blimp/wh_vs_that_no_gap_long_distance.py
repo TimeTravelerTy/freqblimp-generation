@@ -4,6 +4,8 @@ from utils.conjugate import *
 from utils.randomize import choice
 from utils.vocab_sets import *
 
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+
 class FillerGapGenerator(data_generator.BenchmarkGenerator):
     def __init__(self):
         super().__init__(field="syntax",
@@ -21,18 +23,18 @@ class FillerGapGenerator(data_generator.BenchmarkGenerator):
         # I  know what the lion that roamed the plains devoured a gazelle.
         # N1 V1   wh       N2   that V_rel      N_rel  V2         N3
 
-        V1 = choice(self.embedding_verbs)
-        N1 = N_to_DP_mutate(choice(get_matches_of(V1, "arg_1", all_nouns)))
-        V2 = choice(all_transitive_verbs)
-        N2 = N_to_DP_mutate(choice(get_matches_of(V2, "arg_1", all_common_nouns)))
-        N3 = N_to_DP_mutate(choice(get_matches_of(V2, "arg_2", all_nouns))) # needed to choose the correct wh-word, but N3 never gets used
+        V1 = choice(filter_rows_for_active_zipf(self.embedding_verbs, "verb"))
+        N1 = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V1, "arg_1", all_nouns), "noun")))
+        V2 = choice(filter_rows_for_active_zipf(all_transitive_verbs, "verb"))
+        N2 = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V2, "arg_1", all_common_nouns), "noun")))
+        N3 = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V2, "arg_2", all_nouns), "noun"))) # needed to choose the correct wh-word, but N3 never gets used
 
         x = random.random()
         if x < 1 / 2:
-            V_rel = choice(get_matched_by(N2, "arg_1", all_transitive_verbs))
-            N_rel = N_to_DP_mutate(choice(get_matches_of(V_rel, "arg_2", all_nouns)))
+            V_rel = choice(filter_rows_for_active_zipf(get_matched_by(N2, "arg_1", all_transitive_verbs), "verb"))
+            N_rel = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V_rel, "arg_2", all_nouns), "noun")))
         else:
-            V_rel = choice(get_matched_by(N2, "arg_1", all_intransitive_verbs))
+            V_rel = choice(filter_rows_for_active_zipf(get_matched_by(N2, "arg_1", all_intransitive_verbs), "verb"))
             N_rel = " "
 
         V1 = conjugate(V1, N1)

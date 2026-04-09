@@ -4,6 +4,8 @@ from utils.conjugate import *
 from utils.randomize import choice
 from utils.vocab_sets import *
 
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+
 
 class AgreementGenerator(data_generator.BenchmarkGenerator):
     def __init__(self):
@@ -26,8 +28,8 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
 
         V_emb = None
         while V_emb is None:
-            V_mat_agree = choice(self.safe_mat_verbs)
-            subj = N_to_DP_mutate(choice(get_matches_of(V_mat_agree, "arg_1", self.all_reg_nouns)))
+            V_mat_agree = choice(filter_rows_for_active_zipf(self.safe_mat_verbs, "verb"))
+            subj = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V_mat_agree, "arg_1", self.all_reg_nouns), "noun")))
             rel = choice(get_matched_by(subj, "arg_1", get_all("category_2", "rel")))
             if V_mat_agree["finite"] == "1":
                 if V_mat_agree["3sg"] == "1":
@@ -38,12 +40,12 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
                 V_mat_not_agree = V_mat_agree
 
             if subj["pl"] == "1":
-                obj_emb = N_to_DP_mutate(choice(get_matches_of(V_mat_not_agree, "arg_1", all_singular_nouns)))
+                obj_emb = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V_mat_not_agree, "arg_1", all_singular_nouns), "noun")))
             else:
-                obj_emb = N_to_DP_mutate(choice(get_matches_of(V_mat_not_agree, "arg_1", all_plural_nouns)))
+                obj_emb = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V_mat_not_agree, "arg_1", all_plural_nouns), "noun")))
 
             try:
-                V_emb = choice(get_matched_by(subj, "arg_1", get_matched_by(obj_emb, "arg_2", self.safe_emb_verbs)))
+                V_emb = choice(filter_rows_for_active_zipf(get_matched_by(subj, "arg_1", get_matched_by(obj_emb, "arg_2", self.safe_emb_verbs)), "verb"))
             except IndexError:
                 pass
 

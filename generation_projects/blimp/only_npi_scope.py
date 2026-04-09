@@ -3,6 +3,8 @@ from utils.constituent_building import *
 from utils.conjugate import *
 from utils.randomize import choice
 
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+
 class Generator(data_generator.BenchmarkGenerator):
     def __init__(self):
         super().__init__(field="syntax_semantics",
@@ -21,12 +23,12 @@ class Generator(data_generator.BenchmarkGenerator):
         # The drivers who only John     will    help     should ever love the dancers
         # subj        rel ONLY subj_emb aux_emb V_emb    aux    EVER VP
 
-        V = choice(self.safe_verbs)
-        subj = N_to_DP_mutate(choice(get_matches_of(V, "arg_1", self.safe_subjs)))
+        V = choice(filter_rows_for_active_zipf(self.safe_verbs, "verb"))
+        subj = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V, "arg_1", self.safe_subjs), "noun")))
         args = verb_args_from_verb(V, allow_negated=False, subj=subj)
         VP = V_to_VP_mutate(V, args=args, aux=False)
         rel = choice(get_matched_by(args["subj"], "arg_1", all_relativizers))
-        V_emb = choice(get_matched_by(subj, "arg_2", all_transitive_verbs))
+        V_emb = choice(filter_rows_for_active_zipf(get_matched_by(subj, "arg_2", all_transitive_verbs), "verb"))
         args_emb = verb_args_from_verb(V_emb, allow_negated=False)
 
         data = {

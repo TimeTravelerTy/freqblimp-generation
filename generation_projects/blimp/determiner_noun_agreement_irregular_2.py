@@ -4,6 +4,8 @@ from utils.conjugate import *
 from utils.randomize import choice
 from utils.vocab_sets import *
 
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+
 class DetNGenerator(data_generator.BenchmarkGenerator):
     def __init__(self):
         super().__init__(field="morphology",
@@ -26,8 +28,8 @@ class DetNGenerator(data_generator.BenchmarkGenerator):
         # John cleaned these        table.
         # N1   V1      Dem_mismatch N2
 
-        V1 = choice(all_transitive_verbs)
-        N1 = N_to_DP_mutate(choice(get_matches_of(V1, "arg_1", all_nouns)))
+        V1 = choice(filter_rows_for_active_zipf(all_transitive_verbs, "verb"))
+        N1 = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V1, "arg_1", all_nouns), "noun")))
         N2 = choice(get_matches_of(V1, "arg_2", self.all_irreg_pluralizable_nouns))
         Dem_match = choice(get_matched_by(N2, "arg_1", all_demonstratives))
         if Dem_match[0] == "this":

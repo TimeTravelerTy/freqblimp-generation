@@ -3,6 +3,8 @@ from utils.constituent_building import *
 from utils.conjugate import *
 from utils.randomize import choice
 
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+
 class Generator(data_generator.BenchmarkGenerator):
     def __init__(self):
         super().__init__(field="syntax_semantics",
@@ -22,12 +24,12 @@ class Generator(data_generator.BenchmarkGenerator):
         # The man who might   not see Jane has ever left.
         # subj    rel aux_emb NOT VP_emb   aux EVER VP
 
-        V = choice(self.safe_matrix_verbs)
-        subj = N_to_DP_mutate(choice(get_matches_of(V, "arg_1", self.safe_subjs)))
+        V = choice(filter_rows_for_active_zipf(self.safe_matrix_verbs, "verb"))
+        subj = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V, "arg_1", self.safe_subjs), "noun")))
         args = verb_args_from_verb(V, allow_negated=False, subj=subj)
         VP = V_to_VP_mutate(V, aux=False, args=args)
         rel = choice(get_matched_by(args["subj"], "arg_1", all_relativizers))
-        V_emb = choice(get_matched_by(subj, "arg_1", self.safe_emb_verbs))
+        V_emb = choice(filter_rows_for_active_zipf(get_matched_by(subj, "arg_1", self.safe_emb_verbs), "verb"))
         args_emb = verb_args_from_verb(V_emb, allow_negated=False, subj=args["subj"])
         VP_emb = V_to_VP_mutate(V_emb, aux=False, args=args_emb)
 

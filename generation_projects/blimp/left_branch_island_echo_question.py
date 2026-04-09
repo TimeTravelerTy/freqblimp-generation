@@ -4,6 +4,8 @@ from utils.conjugate import *
 from utils.randomize import choice
 from utils.vocab_sets import *
 
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+
 class LeftBranchGenerator(data_generator.BenchmarkGenerator):
     def __init__(self):
         super().__init__(field="syntax",
@@ -22,11 +24,11 @@ class LeftBranchGenerator(data_generator.BenchmarkGenerator):
         # Whose are  you petting dog?
         # wh    V_do N1  V1      N2
 
-        V1 = choice(all_non_finite_transitive_verbs)
-        N1 = N_to_DP_mutate(choice(get_matches_of(V1, "arg_1", all_nouns)))
+        V1 = choice(filter_rows_for_active_zipf(all_non_finite_transitive_verbs, "verb"))
+        N1 = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V1, "arg_1", all_nouns), "noun")))
         V_do = return_aux(V1, N1, allow_negated=False)
         wh = choice(self.all_D_wh)
-        N2 = choice(get_matches_of(V1, "arg_2", all_common_nouns))
+        N2 = choice(filter_rows_for_active_zipf(get_matches_of(V1, "arg_2", all_common_nouns), "noun"))
         if N2['animate'] == "1":
             wh = choice(self.which_what)
         else:

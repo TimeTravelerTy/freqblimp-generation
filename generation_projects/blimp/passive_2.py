@@ -3,6 +3,8 @@ from utils.constituent_building import *
 from utils.conjugate import *
 from utils.randomize import choice
 
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+
 class Generator(data_generator.BenchmarkGenerator):
     def __init__(self):
         super().__init__(field="syntax",
@@ -23,9 +25,9 @@ class Generator(data_generator.BenchmarkGenerator):
         # The girl was smiled.
         # NP1      be  V_intrans
 
-        V_intrans = choice(self.intransitive)
+        V_intrans = choice(filter_rows_for_active_zipf(self.intransitive, "verb"))
         NP1 = N_to_DP_mutate(choice(get_matches_of(V_intrans, "arg_1", all_nominals)))
-        V_trans = choice(get_matched_by(NP1, "arg_2", self.transitive))
+        V_trans = choice(filter_rows_for_active_zipf(get_matched_by(NP1, "arg_2", self.transitive), "verb"))
         be = return_copula(NP1)
 
         data = {

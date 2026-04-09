@@ -5,6 +5,8 @@ from utils.randomize import choice
 from functools import reduce
 from utils.vocab_sets import *
 
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+
 class AgreementGenerator(data_generator.BenchmarkGenerator):
     def __init__(self):
         super().__init__(field="morphology",
@@ -32,10 +34,10 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
         #     N1  aux_nonagree V1_nonagree   N2
 
         if random.choice([True, False]):
-            V1_agree = choice(np.intersect1d(self.safe_verbs, all_transitive_verbs))
+            V1_agree = choice(filter_rows_for_active_zipf(np.intersect1d(self.safe_verbs, all_transitive_verbs), "verb"))
         else:
-            V1_agree = choice(np.intersect1d(self.safe_verbs, all_transitive_verbs))
-        N1 = N_to_DP_mutate(choice(get_matches_of(V1_agree, "arg_1", self.all_reg_nouns)))
+            V1_agree = choice(filter_rows_for_active_zipf(np.intersect1d(self.safe_verbs, all_transitive_verbs), "verb"))
+        N1 = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V1_agree, "arg_1", self.all_reg_nouns), "noun")))
 
         if V1_agree["pres"] == "1":
             V1_nonagree = get_mismatch_verb(V1_agree)

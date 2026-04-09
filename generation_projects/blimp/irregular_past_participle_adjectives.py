@@ -4,6 +4,8 @@ from utils.conjugate import *
 from utils.randomize import choice
 from utils.vocab_sets import *
 
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+
 class AgreementGenerator(data_generator.BenchmarkGenerator):
     def __init__(self):
         super().__init__(field="morphology",
@@ -27,9 +29,9 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
         Verbs = get_all("root", V_base["root"])
         V_past = get_all("past", "1", Verbs)
         V_en = get_all("en", "1", Verbs)
-        N1 = choice(get_matches_of(V_base, "arg_2", all_common_nouns))
+        N1 = choice(filter_rows_for_active_zipf(get_matches_of(V_base, "arg_2", all_common_nouns), "noun"))
         cop = return_copula(N1)
-        adj = choice(get_matched_by(N1, "arg_1", all_adjectives))
+        adj = choice(filter_rows_for_active_zipf(get_matched_by(N1, "arg_1", all_adjectives), "adjective"))
 
         data = {
             "sentence_good": "The %s %s %s %s." % (V_en[0][0], N1[0], cop[0], adj[0]),

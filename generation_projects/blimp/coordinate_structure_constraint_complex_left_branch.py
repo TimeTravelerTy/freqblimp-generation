@@ -4,6 +4,8 @@ from utils.conjugate import *
 from utils.randomize import choice
 from utils.vocab_sets import *
 
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+
 class Generator(data_generator.BenchmarkGenerator):
     def __init__(self):
         super().__init__(field="syntax",
@@ -22,11 +24,11 @@ class Generator(data_generator.BenchmarkGenerator):
         # What did  John cook pie and Mary eat?
         # wh   V_do N1   V1   N3  and N2   V2_match
 
-        V1 = choice(all_non_finite_transitive_verbs)
-        N1 = N_to_DP_mutate(choice(get_matches_of(V1, "arg_1", all_nouns)))
-        N3 = choice(get_matches_of(V1, "arg_2", get_all('pl', '1', all_common_nouns)))
+        V1 = choice(filter_rows_for_active_zipf(all_non_finite_transitive_verbs, "verb"))
+        N1 = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V1, "arg_1", all_nouns), "noun")))
+        N3 = choice(filter_rows_for_active_zipf(get_matches_of(V1, "arg_2", get_all('pl', '1', all_common_nouns)), "noun"))
         V_do = return_aux(V1, N1, allow_negated=False)
-        V2 = choice(get_matched_by(N3, "arg_2", all_transitive_verbs))
+        V2 = choice(filter_rows_for_active_zipf(get_matched_by(N3, "arg_2", all_transitive_verbs), "verb"))
 
         # make sure V1 and V2 are the same form
         Verb2 = get_all("root", V2["root"])
@@ -39,7 +41,7 @@ class Generator(data_generator.BenchmarkGenerator):
         else:
             pass
         V2_match = choice(get_all(Vmatch, "1", Verb2))
-        N2 = N_to_DP_mutate(choice(get_matches_of(V_do, "arg_1", get_matches_of(V2_match, "arg_1", all_nouns))))
+        N2 = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V_do, "arg_1", get_matches_of(V2_match, "arg_1", all_nouns)), "noun")))
 
         if N3['animate'] == "1":
             wh = choice(self.which_what)

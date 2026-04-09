@@ -4,6 +4,8 @@ from utils.conjugate import *
 from utils.randomize import choice
 from utils.vocab_sets import *
 
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+
 class AgreementGenerator(data_generator.BenchmarkGenerator):
     def __init__(self):
         super().__init__(field="morphology",
@@ -25,9 +27,9 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
 
         S_arg = None
         while S_arg is None:
-            subj = choice(self.safe_subjs)
+            subj = choice(filter_rows_for_active_zipf(self.safe_subjs, "noun"))
             D = choice(get_matched_by(subj, "arg_1", all_very_common_dets))
-            V_agree = choice(get_matched_by(subj, "arg_1", self.safe_verbs))
+            V_agree = choice(filter_rows_for_active_zipf(get_matched_by(subj, "arg_1", self.safe_verbs), "verb"))
             if V_agree["finite"] == "1":
                 if V_agree["3sg"] == "1":
                     V_not_agree = choice(
@@ -40,10 +42,10 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
 
             try:
                 if subj["pl"] == "1":
-                    S_arg = N_to_DP_mutate(choice(get_matches_of(V_not_agree, "arg_1", get_matches_of(subj, "arg_1", all_singular_nouns))))
+                    S_arg = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V_not_agree, "arg_1", get_matches_of(subj, "arg_1", all_singular_nouns)), "noun")))
                     pass
                 else:
-                    S_arg = N_to_DP_mutate(choice(get_matches_of(V_not_agree, "arg_1", get_matches_of(subj, "arg_1", all_plural_nouns))))
+                    S_arg = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V_not_agree, "arg_1", get_matches_of(subj, "arg_1", all_plural_nouns)), "noun")))
                     pass
             except Exception:
                 continue

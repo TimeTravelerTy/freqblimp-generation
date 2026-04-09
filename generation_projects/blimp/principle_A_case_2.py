@@ -4,6 +4,8 @@ from utils.conjugate import *
 from utils.randomize import choice
 from utils.vocab_sets import *
 
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+
 class BindingGenerator(data_generator.BenchmarkGenerator):
     def __init__(self):
         super().__init__(field="syntax/semantics",
@@ -24,13 +26,13 @@ class BindingGenerator(data_generator.BenchmarkGenerator):
 
         special_verbs = choice(self.special_verbs)
         V1 = choice(get_all("root", special_verbs["root"]))
-        N1 = N_to_DP_mutate(choice(get_matches_of(V1, "arg_1", self.all_safe_nouns)))
-        Vembed_base = choice(get_matched_by(N1, "arg_1", all_transitive_verbs))
+        N1 = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V1, "arg_1", self.all_safe_nouns), "noun")))
+        Vembed_base = choice(filter_rows_for_active_zipf(get_matched_by(N1, "arg_1", all_transitive_verbs), "verb"))
         Verb_embed = get_all("root", Vembed_base["root"])
         Vembed_ing = choice(get_all('ing', "1", Verb_embed))
         Vembed_finite = choice(get_matched_by(N1, "arg_1", get_all('finite', "1", Verb_embed)))
         refl_match = choice(get_matched_by(N1, "arg_1", all_reflexives))
-        N2 = N_to_DP_mutate(choice(get_matches_of(Vembed_base, "arg_2", all_nouns)))
+        N2 = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(Vembed_base, "arg_2", all_nouns), "noun")))
 
         V1 = conjugate(V1, N1)
 

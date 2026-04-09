@@ -3,6 +3,8 @@ from utils.constituent_building import *
 from utils.conjugate import *
 from utils.randomize import choice
 
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+
 class CSCGenerator(data_generator.BenchmarkGenerator):
     def __init__(self):
         super().__init__(field="syntax",
@@ -22,10 +24,10 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
         # The bear has injured.
         # Subj     Aux V_strict
 
-        V_non_strict = choice(self.drop_arg_transitive)
+        V_non_strict = choice(filter_rows_for_active_zipf(self.drop_arg_transitive, "verb"))
         Subj = N_to_DP_mutate(choice(get_matches_of(V_non_strict, "arg_1", all_nominals)))
         Aux = return_aux(V_non_strict, Subj)
-        V_strict = choice(get_matched_by(Subj, "arg_1", get_matches_of(Aux, "arg_2", self.strict_transitive)))
+        V_strict = choice(filter_rows_for_active_zipf(get_matched_by(Subj, "arg_1", get_matches_of(Aux, "arg_2", self.strict_transitive)), "verb"))
 
         data = {
             "sentence_good": "%s %s %s." % (Subj[0], Aux[0], V_non_strict[0]),

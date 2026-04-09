@@ -4,6 +4,8 @@ from utils.conjugate import *
 from utils.randomize import choice
 from utils.vocab_sets import *
 
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+
 class AnaphorGenerator(data_generator.BenchmarkGenerator):
     def __init__(self):
         super().__init__(field="syntax_semantics",
@@ -21,7 +23,7 @@ class AnaphorGenerator(data_generator.BenchmarkGenerator):
         # IT'S Refl    Rel  V1   N1
 
         V1 = choice(all_refl_preds)
-        N1 = choice(get_matches_of(V1, "arg_1", all_nouns))
+        N1 = choice(filter_rows_for_active_zipf(get_matches_of(V1, "arg_1", all_nouns), "noun"))
         N1 = N_to_DP_mutate(N1)
         Rel = choice(get_matched_by(N1, "arg_1", all_relativizers))
         Refl = choice(get_matched_by(N1, "arg_1", all_reflexives))

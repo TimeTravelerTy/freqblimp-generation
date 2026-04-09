@@ -4,6 +4,8 @@ from utils.conjugate import *
 from utils.randomize import choice
 from utils.vocab_sets import *
 
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+
 class SentSubjGenerator(data_generator.BenchmarkGenerator):
     def __init__(self):
         super().__init__(field="syntax",
@@ -26,15 +28,15 @@ class SentSubjGenerator(data_generator.BenchmarkGenerator):
         # Who did  Bill's  calling annoy the president?
         # wh  V_do N1_poss Ving    V2        N2
 
-        Ving = choice(self.all_transitive_ing_verbs)
-        N1_poss = N_to_DP_mutate(choice(get_matches_of(Ving, "arg_1", self.all_safe_common_nouns)))
+        Ving = choice(filter_rows_for_active_zipf(self.all_transitive_ing_verbs, "verb"))
+        N1_poss = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(Ving, "arg_1", self.all_safe_common_nouns), "noun")))
         if N1_poss['pl'] == "1" and N1_poss['irrpl'] != "1":
             N1_poss[0] = N1_poss[0]+"'"
         else:
             N1_poss[0] = N1_poss[0]+"'s"
-        V2 = choice(self.all_inanim_anim_nonfinite_transitive_verbs)
+        V2 = choice(filter_rows_for_active_zipf(self.all_inanim_anim_nonfinite_transitive_verbs, "verb"))
         V_do = return_aux(V2, N1_poss, allow_negated=False)
-        N2 = N_to_DP_mutate(choice(get_matches_of(Ving, "arg_2", get_matches_of(V2, "arg_2", self.all_safe_nouns))))
+        N2 = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(Ving, "arg_2", get_matches_of(V2, "arg_2", self.all_safe_nouns)), "noun")))
         wh = choice(get_matches_of(V2, "arg_2", all_wh_words))
 
         data = {

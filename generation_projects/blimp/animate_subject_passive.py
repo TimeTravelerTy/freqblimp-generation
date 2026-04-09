@@ -7,6 +7,8 @@ from utils.string_utils import string_beautify
 from functools import reduce
 from utils.vocab_sets import *
 
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+
 class AgreementGenerator(data_generator.BenchmarkGenerator):
     def __init__(self):
         super().__init__(field="syntax",
@@ -34,8 +36,8 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
         N1 = N_to_DP_mutate(choice(get_matches_of(V1, 'arg_2', all_nouns)))
         cop = return_copula(N1)
         det = choice(self.dets)
-        N2_good = choice(get_all("animate", "1", get_matched_by(V1, "arg_1", all_common_nouns)))
-        N2_bad = choice(get_all("animate", "0", self.nonlocation_commonnouns))
+        N2_good = choice(filter_rows_for_active_zipf(get_all("animate", "1", get_matched_by(V1, "arg_1", all_common_nouns)), "noun"))
+        N2_bad = choice(filter_rows_for_active_zipf(get_all("animate", "0", self.nonlocation_commonnouns), "noun"))
 
         data = {
             "sentence_good": "%s %s %s by %s %s." % (N1[0], cop[0], V1[0], det, N2_good[0]),

@@ -4,6 +4,8 @@ from utils.conjugate import *
 from utils.randomize import choice
 from utils.vocab_sets import *
 
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+
 class AgreementGenerator(data_generator.BenchmarkGenerator):
     def __init__(self):
         super().__init__(field="syntax",
@@ -25,11 +27,11 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
         # N1_bad    V1        N2
 
         V1 = choice(self.all_anim_subj_verbs)
-        N1_good = N_to_DP_mutate(choice(get_matches_of(V1, "arg_1", all_nouns)))
+        N1_good = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V1, "arg_1", all_nouns), "noun")))
         if N1_good['sg'] == '1':
-            N1_bad = N_to_DP_mutate(choice(get_all('sg', '1', all_inanimate_nouns)))
+            N1_bad = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_all('sg', '1', all_inanimate_nouns), "noun")))
         elif N1_good['pl'] == '1':
-            N1_bad = N_to_DP_mutate(choice(get_all('pl', '1', all_inanimate_nouns)))
+            N1_bad = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_all('pl', '1', all_inanimate_nouns), "noun")))
         else:
             raise ValueError("Subject must be singular or plural.")
         N2 = N_to_DP_mutate(choice(get_matches_of(V1, "arg_2", all_nouns)))

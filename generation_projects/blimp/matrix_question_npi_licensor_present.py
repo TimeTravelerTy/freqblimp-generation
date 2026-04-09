@@ -3,6 +3,8 @@ from utils.constituent_building import *
 from utils.conjugate import *
 from utils.randomize import choice
 
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+
 class Generator(data_generator.BenchmarkGenerator):
     def __init__(self):
         super().__init__(field="semantics",
@@ -20,7 +22,7 @@ class Generator(data_generator.BenchmarkGenerator):
         # The teachers have ever watched the waitresses.
         # Subj         Aux  EVER VP
 
-        V = choice(self.safe_verbs)
+        V = choice(filter_rows_for_active_zipf(self.safe_verbs, "verb"))
         args = verb_args_from_verb(V, allow_negated=False)
         VP = V_to_VP_mutate(V, aux=False, args=args)
 
