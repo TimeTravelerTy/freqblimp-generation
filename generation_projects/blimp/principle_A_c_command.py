@@ -30,8 +30,12 @@ class BindingGenerator(data_generator.BenchmarkGenerator):
         C1 = choice(get_matched_by(N1, "arg_1", all_relativizers))
         Vembed = choice(filter_rows_for_active_zipf(get_matched_by(N1, "arg_1", all_transitive_verbs), "verb"))
         N2 = choice(filter_rows_for_active_zipf(get_matches_of(Vembed, "arg_2", self.all_safe_nouns), "noun"))
-        while is_match_disj(N2, refl_match["arg_1"]):
+        n_tries = 0
+        while is_match_disj(N2, refl_match["arg_1"]) and n_tries < 10:
             N2 = choice(filter_rows_for_active_zipf(get_matches_of(Vembed, "arg_2", self.all_safe_nouns), "noun"))
+            n_tries += 1
+        if n_tries == 10:
+            raise ValueError
         N2 = N_to_DP_mutate(N2)
         refl_mismatch = choice(get_matched_by(N2, "arg_1", all_reflexives))
         V1 = conjugate(V1, N1)

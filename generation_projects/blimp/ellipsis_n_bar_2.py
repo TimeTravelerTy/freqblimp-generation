@@ -3,7 +3,7 @@ from utils.constituent_building import *
 from utils.conjugate import *
 from utils.randomize import choice, decision
 from utils.vocab_sets import *
-from utils.vocab_table import get_row_metadata
+from utils.vocab_table import get_row_metadata, _get_label_index
 
 from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
 
@@ -69,7 +69,27 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
             fallback_on_empty=False,
         )
 
+    def _viable_obj_check(self, obj):
+        """Fast viability check: does obj have ≥2 adjectives?
+
+        Uses the pre-built label-index on all_adjectives rather than calling
+        get_matched_by(), which would materialise and cache a full result array
+        (~MBs) for every candidate in the scan pool → OOM with large overlays.
+        """
+        idx = _get_label_index("arg_1", all_adjectives)  # built once, cached
+        count = 0
+        for val, row_indices in idx.items():
+            if is_match_disj(obj, val):
+                count += len(row_indices)
+                if count >= 2:
+                    return True
+        return False
+
     def _source_balanced_pool(self, pool, minimum_size=1):
+        # Cap to avoid O(N_overlay) row_signature calls over huge pools.
+        _POOL_CAP = 500
+        if len(pool) > _POOL_CAP:
+            pool = pool[np.sort(np.random.choice(len(pool), size=_POOL_CAP, replace=False))]
         base_rows = []
         overlay_rows = []
         for row in pool:
@@ -100,7 +120,15 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
         else:
             Aux2 = return_aux(V, subj=Subj2)
         obj_pool = get_matches_of(V, "arg_2", get_all("mass", "0", self.safe_objs))
-        viable_objs = [obj for obj in obj_pool if len(self._strict_adjective_pool_for_obj(obj)) >= 2]
+        # Cap the viability scan to avoid O(N_overlay) cache accumulation → OOM.
+        # 500 candidates is more than enough to find viable objects.
+        _SCAN_CAP = 500
+        if len(obj_pool) > _SCAN_CAP:
+            scan_indices = np.sort(np.random.choice(len(obj_pool), size=_SCAN_CAP, replace=False))
+            scan_pool = obj_pool[scan_indices]
+        else:
+            scan_pool = obj_pool
+        viable_objs = [obj for obj in scan_pool if self._viable_obj_check(obj)]
         if viable_objs:
             Obj = choice(self._source_balanced_pool(np.array(viable_objs, dtype=obj_pool.dtype)))
         else:

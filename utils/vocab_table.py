@@ -1,3 +1,4 @@
+import gc
 import json
 import os
 import re
@@ -24,6 +25,11 @@ _TABLE_ZIPF_EXPRESSION_CACHE = {}
 _TABLE_ROW_SIGNATURE_CACHE = {}
 _EXPRESSION_ZIPF_REGISTRY = None
 
+# Max entries for caches that store large numpy array slices.
+# Prevents unbounded memory growth when many unique (row, label, table) combinations
+# are seen within a single paradigm run (e.g. with the large vocabulary overlay).
+_RESULT_CACHE_MAX = 256
+
 
 def clear_query_caches():
     _GET_ALL_CACHE.clear()
@@ -33,6 +39,7 @@ def clear_query_caches():
     _TABLE_LABEL_INDEX.clear()
     _TABLE_ZIPF_EXPRESSION_CACHE.clear()
     _TABLE_ROW_SIGNATURE_CACHE.clear()
+    gc.collect()
 
 
 def _get_label_index(label, table):
@@ -300,12 +307,26 @@ def _load_frequency_cache(path):
     return cache
 
 
+def _filter_overlay_acronym_nouns(table):
+    """Remove noun rows that look like lowercased acronyms (no standard vowels, e.g. 'nlp', 'mvp', 'psf')."""
+    is_noun = table["noun"] == "1"
+    if not np.any(is_noun):
+        return table
+    expressions = np.asarray(table["expression"], dtype=str)
+    has_vowel = np.zeros(len(table), dtype=bool)
+    for v in "aeiouAEIOU":
+        has_vowel |= np.char.find(expressions, v) >= 0
+    acronym_mask = is_noun & ~has_vowel
+    return table[~acronym_mask]
+
+
 def _build_runtime_vocab():
     base_vocab = _load_vocab_csv(BASE_VOCAB_PATH)
     if _env_flag("FREQBLIMP_USE_OVERLAY", default=False):
         overlay_path = os.environ.get("FREQBLIMP_VOCAB_OVERLAY", DEFAULT_OVERLAY_PATH)
         overlay_vocab = _load_vocab_csv(overlay_path)
         if len(overlay_vocab) > 0:
+            overlay_vocab = _filter_overlay_acronym_nouns(overlay_vocab)
             return np.concatenate([base_vocab, overlay_vocab]).astype(data_type)
     return base_vocab
 
@@ -469,6 +490,8 @@ def get_matches_of(row, label, table=vocab):
                         conj_mask &= (table[lbl] == val)
                     mask |= conj_mask
                 result = table[mask]
+            if len(_GET_MATCHES_OF_CACHE) >= _RESULT_CACHE_MAX:
+                _GET_MATCHES_OF_CACHE.clear()
             _GET_MATCHES_OF_CACHE[key] = result
         return _GET_MATCHES_OF_CACHE[key]
 
@@ -502,9 +525,12 @@ def get_matched_by(row, label, table=vocab):
         passing_indices = [indices for val, indices in idx.items() if is_match_disj(row, val)]
         if passing_indices:
             result_indices = np.concatenate(passing_indices)
-            _GET_MATCHED_BY_CACHE[key] = table[result_indices]
+            result = table[result_indices]
         else:
-            _GET_MATCHED_BY_CACHE[key] = np.array([], dtype=table.dtype)
+            result = np.array([], dtype=table.dtype)
+        if len(_GET_MATCHED_BY_CACHE) >= _RESULT_CACHE_MAX:
+            _GET_MATCHED_BY_CACHE.clear()
+        _GET_MATCHED_BY_CACHE[key] = result
     return _GET_MATCHED_BY_CACHE[key]
 
 

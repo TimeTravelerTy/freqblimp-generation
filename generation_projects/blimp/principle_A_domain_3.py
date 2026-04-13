@@ -31,8 +31,12 @@ class BindingGenerator(data_generator.BenchmarkGenerator):
         N1 = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V1, "arg_1", self.all_safe_gendered_nouns), "noun")))
         refl_mismatch = choice(get_matched_by(N1, "arg_1", all_reflexives))
         N2 = choice(filter_rows_for_active_zipf(get_matches_of(Vembed, "arg_1", self.all_safe_gendered_nouns), "noun"))
-        while is_match_disj(N2, refl_mismatch["arg_1"]):
+        n_tries = 0
+        while is_match_disj(N2, refl_mismatch["arg_1"]) and n_tries < 10:
             N2 = choice(filter_rows_for_active_zipf(get_matches_of(Vembed, "arg_1", self.all_safe_gendered_nouns), "noun"))
+            n_tries += 1
+        if n_tries == 10:
+            raise ValueError
         refl_match = choice(get_matched_by(N2, "arg_1", all_reflexives))
         N2 = N_to_DP_mutate(N2)
         V1 = conjugate(V1, N1)

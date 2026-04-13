@@ -2,6 +2,7 @@
 .venv/
 CODEX_README.md
 logs/
+outputs/overlay_qc*
 outputs/inductive_biases
 .idea/
 View_Vocab.xlsx

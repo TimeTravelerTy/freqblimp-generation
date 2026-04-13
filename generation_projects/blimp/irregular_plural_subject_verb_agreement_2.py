@@ -5,7 +5,7 @@ from utils.randomize import choice
 from functools import reduce
 from utils.vocab_sets import *
 
-from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf, build_agreement_safe_verbs
 
 class AgreementGenerator(data_generator.BenchmarkGenerator):
     def __init__(self):
@@ -21,15 +21,7 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
         self.all_unusable_nouns = np.union1d(self.all_null_plural_nouns, self.all_missingPluralSing_nouns)
         self.all_pluralizable_nouns = np.setdiff1d(all_common_nouns, self.all_unusable_nouns)
         self.all_irreg_nouns = get_all("irrpl", "1", self.all_pluralizable_nouns)
-        self.safe_verbs = reduce(np.union1d, (get_all("pres", "1", all_verbs),
-                                              get_all("ing", "1", all_verbs),
-                                              get_all("en", "1", all_verbs)))
-        ambiguous_verbs = list(filter(lambda verb: len(list(filter(lambda x: x["root"] == verb["root"]
-                                                                             and x["past"] == "1"
-                                                                             and x["expression"] == verb["expression"],
-                                      all_verbs))) > 0,
-                                 get_all("pres", "1", all_verbs)))
-        self.safe_verbs = np.setdiff1d(self.safe_verbs, ambiguous_verbs)
+        self.safe_verbs = build_agreement_safe_verbs()
 
     def sample(self):
         # The cat       is        eating food

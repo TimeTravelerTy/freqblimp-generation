@@ -122,6 +122,35 @@ GUARD_REGISTRY = {
 }
 
 
+def build_agreement_safe_verbs():
+    """Union of pres/ing/en verbs, minus forms homophonous with a past tense.
+
+    Replaces the O(N²) nested Python filter used in the agreement generators,
+    which hangs when run with the large vocabulary overlay.
+    """
+    from functools import reduce as _reduce
+    from utils.vocab_sets import all_verbs as _all_verbs
+
+    safe_verbs = _reduce(np.union1d, (
+        get_all("pres", "1", _all_verbs),
+        get_all("ing", "1", _all_verbs),
+        get_all("en", "1", _all_verbs),
+    ))
+    past_mask = _all_verbs["past"] == "1"
+    past_root_expr = set(zip(
+        np.asarray(_all_verbs["root"][past_mask], dtype=str),
+        np.asarray(_all_verbs["expression"][past_mask], dtype=str),
+    ))
+    pres_verbs = get_all("pres", "1", _all_verbs)
+    is_ambiguous = np.array(
+        [(str(v["root"]), str(v["expression"])) in past_root_expr for v in pres_verbs],
+        dtype=bool,
+    )
+    if np.any(is_ambiguous):
+        safe_verbs = np.setdiff1d(safe_verbs, pres_verbs[is_ambiguous])
+    return safe_verbs
+
+
 def overlay_enabled() -> bool:
     policy = get_active_policy()
     return bool(policy and getattr(policy, "overlay_enabled", False))

@@ -25,8 +25,12 @@ class Generator(data_generator.BenchmarkGenerator):
         V = choice(filter_rows_for_active_zipf(self.safe_verbs, "verb"))
         bad_quantifiers = ["all", "every", "each", "most", "many", "a lot of"]
         args = verb_args_from_verb(V, allow_negated=False)
-        while reduce(lambda x, y: x or y, [args["subj"]["expression"].startswith(x) for x in bad_quantifiers]):
+        n_tries = 0
+        while any(args["subj"]["expression"].startswith(x) for x in bad_quantifiers) and n_tries < 20:
             args = verb_args_from_verb(V, allow_negated=False)
+            n_tries += 1
+        if n_tries == 20:
+            raise ValueError
         VP = V_to_VP_mutate(V, aux=False, args=args)
 
         data = {
