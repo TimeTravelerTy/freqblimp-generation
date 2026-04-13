@@ -17,11 +17,15 @@ from generation_projects.blimp.overlay_coverage import (
     SKIP_FOR_OVERLAY,
 )
 from utils import data_generator
+from utils.exceptions import LexicalGapError
 from utils.randomize import SamplingPolicy, clear_sampling_policy, configure_sampling_policy, set_trace_recording_enabled
 from utils.vocab_table import clear_query_caches
 
 
 class BlimpGeneratorSmokeTests(unittest.TestCase):
+    def tearDown(self):
+        os.environ.pop("FREQBLIMP_MAX_FAILURES", None)
+
     def _build_generator(self, stem):
         module = importlib.import_module("generation_projects.blimp.%s" % stem)
         if hasattr(module, "build_generator"):
@@ -69,6 +73,42 @@ class BlimpGeneratorSmokeTests(unittest.TestCase):
                     output_path = str(Path(tmpdir) / ("%s.jsonl" % stem))
                     generator.generate_paradigm(number_to_generate=1, absolute_path=output_path)
                     self.assertTrue(Path(output_path).exists(), stem)
+
+    def test_generate_paradigm_allows_many_recoverable_failures(self):
+        class EventuallySuccessfulGenerator(data_generator.Generator):
+            def __init__(self):
+                super().__init__()
+                self.uid = "eventually_successful"
+                self.data_fields = ["sentence_good", "sentence_bad"]
+                self.attempts = 0
+
+            def make_metadata_dict(self):
+                return {"UID": self.uid}
+
+            def sample(self):
+                self.attempts += 1
+                if self.attempts <= 11:
+                    raise LexicalGapError("try again")
+                return (
+                    {
+                        "sentence_good": "The teacher smiled.",
+                        "sentence_bad": "The teacher smile.",
+                    },
+                    "The teacher smiled.",
+                )
+
+        clear_sampling_policy()
+        generator = EventuallySuccessfulGenerator()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "eventually_successful.jsonl"
+            manifest_path = Path(tmpdir) / "eventually_successful.manifest.json"
+            generator.generate_paradigm(number_to_generate=1, absolute_path=str(output_path))
+            payload = json.loads(output_path.read_text().splitlines()[0])
+            manifest = json.loads(manifest_path.read_text())
+        self.assertEqual(payload["sentence_good"], "The teacher smiled.")
+        self.assertEqual(manifest["run"]["generated_pairs"], 1)
+        self.assertEqual(manifest["run"]["failures"], 11)
+        self.assertIsNone(manifest["run"]["failure_limit"])
 
 
 class BlimpOverlaySmokeTests(unittest.TestCase):
@@ -197,6 +237,14 @@ class BlimpOverlaySmokeTests(unittest.TestCase):
         ):
             with self.subTest(bundle=bundle):
                 self.assertIn(bundle, bundles)
+
+    def test_frequency_cache_is_compact_expression_registry(self):
+        with open(self.cache_path) as handle:
+            payload = json.load(handle)
+        self.assertEqual(payload.get("format_version"), 2)
+        self.assertIn("expressions", payload)
+        self.assertNotIn("rows", payload)
+        self.assertTrue(payload["expressions"])
 
     def test_overlay_targeted_paradigms_generate(self):
         for stem, controlled_pos in DONE_OVERLAY_CASES:

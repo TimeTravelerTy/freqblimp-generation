@@ -49,6 +49,16 @@ def _progress_enabled():
     return os.environ.get("FREQBLIMP_SHOW_PROGRESS", "1") != "0"
 
 
+def _failure_limit():
+    raw_value = os.environ.get("FREQBLIMP_MAX_FAILURES", "").strip()
+    if not raw_value:
+        return None
+    limit = int(raw_value)
+    if limit < 0:
+        raise ValueError("FREQBLIMP_MAX_FAILURES must be >= 0")
+    return limit
+
+
 class Generator:
     """
     "Abstract" Class that is instantiated by individual data generation scripts
@@ -118,9 +128,9 @@ class Generator:
     def generate_paradigm(self, number_to_generate=1000, rel_output_path=None, absolute_path=None):
         """
         Contains the main loop for generating a full dataset for a given paradigm.
-        Also contains exception handling: some exceptions are tolerated because sometimes no matching arguments can be found,
-        but if at least 10% of cases have an exception, it terminates since this is probably an issue in the code, and
-        it could cause an infinite loop otherwise.
+        Some exceptions are tolerated because sometimes no matching arguments can be found. By default the generator keeps
+        retrying until it reaches the requested pair count; an optional hard cap can be set via FREQBLIMP_MAX_FAILURES when
+        a bounded run is preferable.
         :param number_to_generate: number of minimal pairs/sets to generate
         :param rel_output_path: relative path of output file
         :param absolute_path: absolute path of output file
@@ -146,7 +156,7 @@ class Generator:
         progress_enabled = _progress_enabled()
         progress = tqdm(total=number_to_generate, desc=constant_data["UID"], unit="pair", dynamic_ncols=True) if progress_enabled else _NullProgress()
         record_trace = trace_recording_enabled()
-        failure_limit = max(10, number_to_generate // 5)
+        failure_limit = _failure_limit()
         while len(past_sentences) < number_to_generate:
             try:
                 if record_trace:
@@ -186,11 +196,11 @@ class Generator:
                     print(self.get_stack_trace(e))
                 error_counter += 1
                 progress.set_postfix(failures=error_counter)
-                if error_counter > failure_limit:
+                if failure_limit is not None and error_counter > failure_limit:
                     progress.close()
                     raise Exception(
-                        "Over 20%% of samples failed for %s. Last error: %s"
-                        % (constant_data["UID"], getattr(e, "msg", str(e)))
+                        "Over %s sampling failures for %s. Last error: %s"
+                        % (failure_limit, constant_data["UID"], getattr(e, "msg", str(e)))
                     )
         progress.close()
         output_writer.close()

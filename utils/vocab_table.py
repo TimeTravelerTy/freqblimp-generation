@@ -24,6 +24,8 @@ _TABLE_LABEL_INDEX = {}  # (label, table_key) -> {str_value -> np.array of row i
 _TABLE_ZIPF_EXPRESSION_CACHE = {}
 _TABLE_ROW_SIGNATURE_CACHE = {}
 _EXPRESSION_ZIPF_REGISTRY = None
+_EXPRESSION_ZIPF_REGISTRY_PATH = None
+_ROW_FREQUENCY_CACHE = {}
 
 # Max entries for caches that store large numpy array slices.
 # Prevents unbounded memory growth when many unique (row, label, table) combinations
@@ -32,6 +34,8 @@ _RESULT_CACHE_MAX = 256
 
 
 def clear_query_caches():
+    global _OVERLAY_METADATA_REGISTRY, _OVERLAY_METADATA_REGISTRY_PATH
+    global _EXPRESSION_ZIPF_REGISTRY, _EXPRESSION_ZIPF_REGISTRY_PATH
     _GET_ALL_CACHE.clear()
     _GET_ALL_CONJ_CACHE.clear()
     _GET_MATCHES_OF_CACHE.clear()
@@ -39,6 +43,11 @@ def clear_query_caches():
     _TABLE_LABEL_INDEX.clear()
     _TABLE_ZIPF_EXPRESSION_CACHE.clear()
     _TABLE_ROW_SIGNATURE_CACHE.clear()
+    _ROW_FREQUENCY_CACHE.clear()
+    _OVERLAY_METADATA_REGISTRY = None
+    _OVERLAY_METADATA_REGISTRY_PATH = None
+    _EXPRESSION_ZIPF_REGISTRY = None
+    _EXPRESSION_ZIPF_REGISTRY_PATH = None
     gc.collect()
 
 
@@ -243,33 +252,14 @@ def _lemma_expression_for_row(row, family_rows):
 
 
 def build_frequency_cache(table):
-    signatures = _get_table_row_signatures(table)
-    family_expressions = _build_family_expressions(table)
-    family_rows = _build_family_rows(table)
-    zipf_cache = {}
-
-    def _zipf(expression):
-        expression = str(expression).strip()
-        if expression not in zipf_cache:
-            zipf_cache[expression] = zipf_for_expression(expression)
-        return zipf_cache[expression]
-
-    cache = {}
-    for row, signature in zip(table, signatures):
-        expression = str(row["expression"]).strip()
-        family = family_expressions.get(signature, ())
-        lemma_expression = _lemma_expression_for_row(row, family_rows.get(signature, ()))
-        family_zipf = [_zipf(expr) for expr in family if expr]
-        family_zipf = [value for value in family_zipf if value > 0.0]
-        cache[signature] = {
-            "row_signature": signature,
-            "expression": expression,
-            "zipf_expression": _zipf(expression),
-            "lemma_expression": lemma_expression,
-            "zipf_lemma": _zipf(lemma_expression),
-            "zipf_root": min(family_zipf) if family_zipf else _zipf(expression),
+    expressions = sorted(
+        {
+            str(expression).strip()
+            for expression in np.asarray(table["expression"], dtype=str)
+            if str(expression).strip()
         }
-    return cache
+    )
+    return {expression: zipf_for_expression(expression) for expression in expressions}
 
 
 def write_frequency_cache(cache, path=DEFAULT_FREQUENCY_CACHE_PATH):
@@ -277,7 +267,8 @@ def write_frequency_cache(cache, path=DEFAULT_FREQUENCY_CACHE_PATH):
     if directory and not os.path.exists(directory):
         os.makedirs(directory, exist_ok=True)
     payload = {
-        "rows": list(cache.values()),
+        "format_version": 2,
+        "expressions": dict(cache),
     }
     with open(path, "w") as handle:
         json.dump(payload, handle, separators=(",", ":"))
@@ -291,6 +282,13 @@ def _load_frequency_cache(path):
             payload = json.load(handle)
     except Exception:
         return {}
+    if isinstance(payload, dict) and isinstance(payload.get("expressions"), dict):
+        registry = {}
+        for expression, value in payload["expressions"].items():
+            expression = str(expression).strip()
+            if expression:
+                registry[expression] = float(value or 0.0)
+        return registry
     if isinstance(payload, dict):
         rows = payload.get("rows", [])
     elif isinstance(payload, list):
@@ -301,9 +299,9 @@ def _load_frequency_cache(path):
     for row in rows:
         if not isinstance(row, dict):
             continue
-        signature = row.get("row_signature")
-        if signature:
-            cache[str(signature)] = dict(row)
+        expression = str(row.get("expression", "")).strip()
+        if expression and expression not in cache:
+            cache[expression] = float(row.get("zipf_expression") or 0.0)
     return cache
 
 
@@ -339,17 +337,16 @@ _RAW_RUNTIME_VOCAB = _build_runtime_vocab()
 vocab = _filter_runtime_vocab(_RAW_RUNTIME_VOCAB)
 
 # Lazy-loaded structures — only built on first access (avoids O(N) startup cost with large overlays)
-_OVERLAY_MANIFEST_PATH = os.environ.get("FREQBLIMP_OVERLAY_MANIFEST", DEFAULT_OVERLAY_MANIFEST_PATH)
 _OVERLAY_METADATA_REGISTRY = None
-
-_freq_cache_path = os.environ.get("FREQBLIMP_FREQUENCY_CACHE", DEFAULT_FREQUENCY_CACHE_PATH)
-FREQUENCY_CACHE = _load_frequency_cache(_freq_cache_path)
+_OVERLAY_METADATA_REGISTRY_PATH = None
 
 
 def _ensure_overlay_metadata_registry():
-    global _OVERLAY_METADATA_REGISTRY
-    if _OVERLAY_METADATA_REGISTRY is None:
-        _OVERLAY_METADATA_REGISTRY = _load_overlay_manifest(_OVERLAY_MANIFEST_PATH)
+    global _OVERLAY_METADATA_REGISTRY, _OVERLAY_METADATA_REGISTRY_PATH
+    path = os.environ.get("FREQBLIMP_OVERLAY_MANIFEST", DEFAULT_OVERLAY_MANIFEST_PATH)
+    if _OVERLAY_METADATA_REGISTRY is None or _OVERLAY_METADATA_REGISTRY_PATH != path:
+        _OVERLAY_METADATA_REGISTRY = _load_overlay_manifest(path)
+        _OVERLAY_METADATA_REGISTRY_PATH = path
     return _OVERLAY_METADATA_REGISTRY
 
 
@@ -375,9 +372,38 @@ def get_row_metadata(row):
 
 def get_row_frequency(row):
     signature = row_signature(row)
-    record = FREQUENCY_CACHE.get(signature)
-    if record is None:
-        record = build_frequency_cache(np.array([row], dtype=vocab.dtype)).get(signature, {})
+    cached = _ROW_FREQUENCY_CACHE.get(signature)
+    if cached is not None:
+        return dict(cached)
+
+    expression = str(row["expression"]).strip()
+    zipf_expression = _zipf_for_cached_expression(expression)
+    record = {
+        "row_signature": signature,
+        "expression": expression,
+        "zipf_expression": zipf_expression,
+        "lemma_expression": expression,
+        "zipf_lemma": zipf_expression,
+        "zipf_root": zipf_expression,
+    }
+
+    root = str(row["root"]).strip()
+    family_rows = tuple(get_all("root", root)) if root else (row,)
+    if family_rows:
+        record["lemma_expression"] = _lemma_expression_for_row(row, family_rows)
+        record["zipf_lemma"] = _zipf_for_cached_expression(record["lemma_expression"])
+        family_zipf = [
+            _zipf_for_cached_expression(candidate["expression"])
+            for candidate in family_rows
+            if str(candidate["expression"]).strip()
+        ]
+        family_zipf = [value for value in family_zipf if value > 0.0]
+        if family_zipf:
+            record["zipf_root"] = min(family_zipf)
+
+    if len(_ROW_FREQUENCY_CACHE) >= _RESULT_CACHE_MAX:
+        _ROW_FREQUENCY_CACHE.pop(next(iter(_ROW_FREQUENCY_CACHE)))
+    _ROW_FREQUENCY_CACHE[signature] = dict(record)
     return record
 
 
@@ -387,29 +413,35 @@ def get_family_expressions(row):
 
 
 def get_frequency_cache():
-    return dict(FREQUENCY_CACHE)
+    return dict(_ensure_expression_zipf_registry())
 
 
 def _ensure_expression_zipf_registry():
-    global _EXPRESSION_ZIPF_REGISTRY
-    if _EXPRESSION_ZIPF_REGISTRY is None:
-        registry = {}
-        for record in FREQUENCY_CACHE.values():
-            expression = str(record.get("expression", "")).strip()
-            if expression and expression not in registry:
-                registry[expression] = float(record.get("zipf_expression") or 0.0)
-        _EXPRESSION_ZIPF_REGISTRY = registry
+    global _EXPRESSION_ZIPF_REGISTRY, _EXPRESSION_ZIPF_REGISTRY_PATH
+    path = os.environ.get("FREQBLIMP_FREQUENCY_CACHE", DEFAULT_FREQUENCY_CACHE_PATH)
+    if _EXPRESSION_ZIPF_REGISTRY is None or _EXPRESSION_ZIPF_REGISTRY_PATH != path:
+        _EXPRESSION_ZIPF_REGISTRY = _load_frequency_cache(path)
+        _EXPRESSION_ZIPF_REGISTRY_PATH = path
     return _EXPRESSION_ZIPF_REGISTRY
+
+
+def _zipf_for_cached_expression(expression):
+    expression = str(expression).strip()
+    if not expression:
+        return 0.0
+    registry = _ensure_expression_zipf_registry()
+    if expression not in registry:
+        registry[expression] = zipf_for_expression(expression)
+    return float(registry[expression])
 
 
 def get_table_zipf_expression(table):
     key = _table_cache_key(table)
     if key not in _TABLE_ZIPF_EXPRESSION_CACHE:
-        registry = _ensure_expression_zipf_registry()
         expressions = np.asarray(table["expression"], dtype=str)
         unique_expressions, inverse = np.unique(expressions, return_inverse=True)
         unique_zipf = np.array(
-            [registry.get(str(expression).strip(), zipf_for_expression(expression)) for expression in unique_expressions],
+            [_zipf_for_cached_expression(expression) for expression in unique_expressions],
             dtype=np.float32,
         )
         _TABLE_ZIPF_EXPRESSION_CACHE[key] = unique_zipf[inverse]
