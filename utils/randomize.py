@@ -112,6 +112,19 @@ def _without_avoid(candidates, avoid):
             return candidates
     except TypeError:
         pass
+    # For composite table types, use expression-based boolean masking so we never
+    # materialise the full candidate set.  np.setdiff1d falls back to
+    # np.asarray(candidates) when `avoid` is np.void (a single structured-array
+    # row), which is not np.ndarray — triggering full materialisation of potentially
+    # hundreds of thousands of rows.
+    from utils.vocab_table import FilteredTable, IndexedTable, ConcatTable
+    if isinstance(candidates, (FilteredTable, IndexedTable, ConcatTable)):
+        try:
+            avoid_exprs = np.atleast_1d(np.asarray(avoid["expression"]))
+            mask = ~np.isin(candidates["expression"], avoid_exprs)
+            return candidates[mask]
+        except (TypeError, ValueError, IndexError, KeyError):
+            pass
     return np.setdiff1d(candidates, avoid)
 
 
