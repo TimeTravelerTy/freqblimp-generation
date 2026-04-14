@@ -183,8 +183,31 @@ class ConcatTable:
                         result_parts.append(part[sub_mask])
                     offset += n
                 return _concat_query_results(result_parts, self.dtype) if result_parts else np.array([], dtype=self.dtype)
-            # Integer array indexing — materialise and delegate
-            return np.asarray(self)[item]
+            # Integer array indexing — per-part scatter (no full materialisation).
+            # Sort indices to enable O(log N) range queries per part, then restore
+            # original order via inverse permutation.
+            item = np.asarray(item, dtype=np.intp)
+            if len(item) == 0:
+                return np.array([], dtype=self.dtype)
+            sort_perm = np.argsort(item, kind="stable")
+            sorted_item = item[sort_perm]
+            offset = 0
+            result_parts = []
+            for part in self.parts:
+                n = len(part)
+                lo = int(np.searchsorted(sorted_item, offset))
+                hi = int(np.searchsorted(sorted_item, offset + n))
+                if lo < hi:
+                    local_indices = sorted_item[lo:hi] - offset
+                    result_parts.append(np.asarray(part[local_indices], dtype=self.dtype))
+                offset += n
+            if not result_parts:
+                return np.array([], dtype=self.dtype)
+            sorted_result = np.concatenate(result_parts)
+            # Restore caller's original index order
+            inv_perm = np.empty(len(sort_perm), dtype=np.intp)
+            inv_perm[sort_perm] = np.arange(len(sort_perm), dtype=np.intp)
+            return sorted_result[inv_perm]
         position = int(item)
         if position < 0:
             position += len(self)
