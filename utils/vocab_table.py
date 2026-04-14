@@ -892,9 +892,10 @@ def get_table_zipf_expression(table):
     key = _table_cache_key(table)
     if key not in _TABLE_ZIPF_EXPRESSION_CACHE:
         if _is_composite_table(table):
+            parts = _iter_tables(table)
             _TABLE_ZIPF_EXPRESSION_CACHE[key] = np.concatenate(
-                [get_table_zipf_expression(part) for part in table if len(part) > 0]
-            ) if any(len(part) > 0 for part in table) else np.array([], dtype=np.float32)
+                [get_table_zipf_expression(part) for part in parts if len(part) > 0]
+            ) if any(len(part) > 0 for part in parts) else np.array([], dtype=np.float32)
             return _TABLE_ZIPF_EXPRESSION_CACHE[key]
         expressions = np.asarray(table["expression"], dtype=str)
         unique_expressions, inverse = np.unique(expressions, return_inverse=True)
