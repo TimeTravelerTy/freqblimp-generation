@@ -21,6 +21,22 @@ def _clear_query_caches():
     clear_query_caches()
 
 
+def _rss_mb():
+    """Return current RSS in MiB. Reads /proc/self/status on Linux; falls back to ru_maxrss."""
+    try:
+        with open("/proc/self/status") as fh:
+            for line in fh:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) / 1024  # kB → MiB
+    except Exception:
+        pass
+    import resource
+    ru = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    # ru_maxrss is bytes on macOS, kB on Linux
+    import sys
+    return ru / 1024 if sys.platform != "darwin" else ru / 1024 / 1024
+
+
 def _available_uids():
     root = Path(__file__).resolve().parent
     ignored = {"__init__", "run", "build_overlay", "sbatch_generator"}
@@ -158,9 +174,11 @@ def _batched_uids(requested_uids, jobs):
 def _run_uid_batch(uids, config):
     _apply_runtime_env(config)
     results = []
+    pid = os.getpid()
     for uid in uids:
         try:
-            results.append(_run_uid(uid, config))
+            result = _run_uid(uid, config)
+            results.append(result)
         except Exception as exc:
             if not config["continue_on_error"]:
                 raise
@@ -176,6 +194,7 @@ def _run_uid_batch(uids, config):
             )
         finally:
             _clear_query_caches()
+            print("[mem pid=%d] after %s: %.0f MiB RSS" % (pid, uid, _rss_mb()), flush=True)
     return results
 
 
@@ -245,6 +264,7 @@ def main():
     if args.jobs == 1 or len(requested_uids) == 1:
         _apply_runtime_env(config)
         results = []
+        pid = os.getpid()
         for uid in requested_uids:
             try:
                 results.append(_run_uid(uid, config))
@@ -263,6 +283,7 @@ def main():
                 )
             finally:
                 _clear_query_caches()
+                print("[mem pid=%d] after %s: %.0f MiB RSS" % (pid, uid, _rss_mb()), flush=True)
         _write_summary(config, requested_uids, results)
         return
     batches = _batched_uids(requested_uids, args.jobs)
