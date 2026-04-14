@@ -793,7 +793,7 @@ def _build_runtime_vocab():
         overlay_path = os.environ.get("FREQBLIMP_VOCAB_OVERLAY", DEFAULT_OVERLAY_PATH)
         overlay_vocab = _load_vocab_csv_runtime(overlay_path, mmap_mode="r", exclude_acronym_nouns=True)
         if len(overlay_vocab) > 0:
-            return (base_vocab, overlay_vocab)
+            return ConcatTable([base_vocab, overlay_vocab])
     return base_vocab
 
 
