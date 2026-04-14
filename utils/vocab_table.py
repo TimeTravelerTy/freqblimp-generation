@@ -751,7 +751,10 @@ def _parts_by_source(table):
     if isinstance(table, ConcatTable):
         merged = {}
         for part in table.parts:
-            for key, (source, indices) in _parts_by_source(part).items():
+            part_map = _parts_by_source(part)
+            if part_map is None:
+                return None
+            for key, (source, indices) in part_map.items():
                 if key in merged:
                     merged[key] = (source, np.union1d(merged[key][1], indices))
                 else:
@@ -762,6 +765,10 @@ def _parts_by_source(table):
     if isinstance(table, FilteredTable):
         indices = np.asarray(table.resolve_indices(), dtype=np.int64)
         return {id(table.source): (table.source, indices)}
+    if isinstance(table, np.ndarray):
+        if len(table) == 0:
+            return {}
+        return {id(table): (table, np.arange(len(table), dtype=np.int64))}
     return None
 
 
