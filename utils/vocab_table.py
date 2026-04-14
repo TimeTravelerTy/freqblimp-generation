@@ -228,7 +228,11 @@ def _table_array_function_dispatch(func, args, kwargs):
     if func is np.setdiff1d:
         ar1, ar2 = args[0], args[1]
         return table_setdiff1d(ar1, ar2)
-    return NotImplemented
+    # For all other numpy functions, materialise table args to data_type and delegate.
+    _TABLE_TYPES = (FilteredTable, IndexedTable, ConcatTable)
+    new_args = tuple(np.asarray(a, dtype=data_type) if isinstance(a, _TABLE_TYPES) else a for a in args)
+    new_kwargs = {k: np.asarray(v, dtype=data_type) if isinstance(v, _TABLE_TYPES) else v for k, v in kwargs.items()}
+    return func(*new_args, **new_kwargs)
 
 
 def _warn_once(key, message):
