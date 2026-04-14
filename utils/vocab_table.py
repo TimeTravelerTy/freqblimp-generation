@@ -97,11 +97,12 @@ class FilteredTable:
             return self.source[int(selected)].copy()
         return IndexedTable(self.source, selected)
 
-    def __array__(self, dtype=None):
-        array = self.source[self.resolve_indices()]
-        if dtype is not None:
-            return np.asarray(array, dtype=dtype)
-        return np.asarray(array)
+    def __array__(self, dtype=None, copy=None):
+        target = dtype if dtype is not None else data_type
+        array = np.asarray(self.source[self.resolve_indices()], dtype=target)
+        if copy:
+            return array.copy()
+        return array
 
 
 class IndexedTable:
@@ -129,11 +130,12 @@ class IndexedTable:
             return self.source[int(selected)].copy()
         return IndexedTable(self.source, selected)
 
-    def __array__(self, dtype=None):
-        array = self.source[self.indices]
-        if dtype is not None:
-            return np.asarray(array, dtype=dtype)
-        return np.asarray(array)
+    def __array__(self, dtype=None, copy=None):
+        target = dtype if dtype is not None else data_type
+        array = np.asarray(self.source[self.indices], dtype=target)
+        if copy:
+            return array.copy()
+        return array
 
 
 class ConcatTable:
@@ -186,17 +188,18 @@ class ConcatTable:
             position -= len(part)
         raise IndexError(position)
 
-    def __array__(self, dtype=None):
-        arrays = [np.asarray(part) for part in self.parts]
+    def __array__(self, dtype=None, copy=None):
+        target = dtype if dtype is not None else data_type
+        arrays = [np.asarray(part, dtype=target) for part in self.parts]
         if not arrays:
-            result = np.array([], dtype=self.dtype)
+            result = np.array([], dtype=target)
         elif len(arrays) == 1:
             result = arrays[0]
         else:
             result = np.concatenate(arrays)
-        if dtype is not None:
-            return np.asarray(result, dtype=dtype)
-        return np.asarray(result)
+        if copy:
+            return result.copy()
+        return result
 
 
 def _warn_once(key, message):
