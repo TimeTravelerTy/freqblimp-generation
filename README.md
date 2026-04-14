@@ -69,4 +69,3 @@ If you use the data generation project in your work, please cite the BLiMP paper
   year={2019}
 }
 ```
-

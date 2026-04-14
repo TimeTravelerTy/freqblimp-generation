@@ -15,7 +15,7 @@ class Generator(data_generator.BenchmarkGenerator):
                          two_prefix_method=False,
                          lexically_identical=False)
 
-        self.alternating_verbs = np.union1d(get_all("causative", "1"), get_all("inchoative", "1"))
+        self.alternating_verbs = table_union1d(get_all("causative", "1"), get_all("inchoative", "1"))
         self.non_alternating_transitives = get_all("inchoative", "0", all_transitive_verbs)
         self.all_singulars = get_all("sg", "1", all_nominals)
         self.all_plurals = get_all("sg", "0", all_nominals)
@@ -39,9 +39,9 @@ class Generator(data_generator.BenchmarkGenerator):
                 Subj = N_to_DP_mutate(choice(get_matches_of(V_inch, "arg_1")))
             Aux = return_aux(V_inch, Subj)
             if Subj["sg"] == "1":
-                safe_verbs = np.intersect1d(self.non_alternating_transitives, all_possibly_singular_verbs)
+                safe_verbs = table_intersect1d(self.non_alternating_transitives, all_possibly_singular_verbs)
             else:
-                safe_verbs = np.intersect1d(self.non_alternating_transitives, all_possibly_plural_verbs)
+                safe_verbs = table_intersect1d(self.non_alternating_transitives, all_possibly_plural_verbs)
             bad_candidates = filter_rows_for_active_zipf(
                 get_matched_by(Subj, "arg_2", get_matches_of(Aux, "arg_2", safe_verbs)),
                 "verb",

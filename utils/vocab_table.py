@@ -1,3 +1,4 @@
+import csv
 import gc
 import json
 import os
@@ -21,6 +22,7 @@ _GET_ALL_CONJ_CACHE = {}
 _GET_MATCHES_OF_CACHE = {}
 _GET_MATCHED_BY_CACHE = {}
 _TABLE_LABEL_INDEX = {}  # (label, table_key) -> {str_value -> np.array of row indices}
+_TABLE_LABEL_VALUE_INDEX = {}  # (label, value, table_key) -> np.array of row indices
 _TABLE_ZIPF_EXPRESSION_CACHE = {}
 _TABLE_ROW_SIGNATURE_CACHE = {}
 _EXPRESSION_ZIPF_REGISTRY = None
@@ -32,6 +34,168 @@ _LAZY_REGISTRY = []  # LazyVocabSet instances that should be reset between parad
 # Prevents unbounded memory growth when many unique (row, label, table) combinations
 # are seen within a single paradigm run (e.g. with the large vocabulary overlay).
 _RESULT_CACHE_MAX = 256
+_WARNED_MESSAGES = set()
+_HIGH_CARDINALITY_EXACT_MATCH_LABELS = frozenset({"expression", "root", "singularform", "pluralform"})
+
+
+def _acronym_like_mask(noun_values, expressions):
+    noun_values = np.asarray(noun_values)
+    expressions = np.asarray(expressions, dtype=str)
+    is_noun = noun_values == "1"
+    if not np.any(is_noun):
+        return np.zeros(len(noun_values), dtype=bool)
+    has_vowel = np.zeros(len(expressions), dtype=bool)
+    for v in "aeiouAEIOU":
+        has_vowel |= np.char.find(expressions, v) >= 0
+    return is_noun & ~has_vowel
+
+
+class FilteredTable:
+    def __init__(self, source, exclude_acronym_nouns=False):
+        self.source = source
+        self.exclude_acronym_nouns = exclude_acronym_nouns
+        self.dtype = source.dtype
+        self.shape = None
+        self.strides = None
+        self._indices = None
+        self._keep_mask = None
+
+    def keep_mask(self):
+        if self._keep_mask is None:
+            keep = np.asarray(self.source["OOV_inductive_biases"] != "1", dtype=bool)
+            if self.exclude_acronym_nouns:
+                keep &= ~_acronym_like_mask(self.source["noun"], self.source["expression"])
+            self._keep_mask = keep
+        return self._keep_mask
+
+    def filter_indices(self, indices):
+        indices = np.asarray(indices, dtype=np.int64)
+        if len(indices) == 0:
+            return indices
+        keep_mask = self.keep_mask()
+        return indices[keep_mask[indices]]
+
+    def resolve_indices(self):
+        if self._indices is None:
+            self._indices = np.flatnonzero(self.keep_mask())
+            self.shape = (len(self._indices),)
+        return self._indices
+
+    def __len__(self):
+        return len(self.resolve_indices())
+
+    def __iter__(self):
+        for idx in self.resolve_indices():
+            yield self.source[int(idx)].copy()
+
+    def __getitem__(self, item):
+        indices = self.resolve_indices()
+        if isinstance(item, str):
+            return self.source[item][indices]
+        selected = indices[item]
+        if np.isscalar(selected):
+            return self.source[int(selected)].copy()
+        return IndexedTable(self.source, selected)
+
+    def __array__(self, dtype=None):
+        array = self.source[self.resolve_indices()]
+        if dtype is not None:
+            return np.asarray(array, dtype=dtype)
+        return np.asarray(array)
+
+
+class IndexedTable:
+    def __init__(self, source, indices):
+        self.source = source
+        self.indices = np.asarray(indices, dtype=np.int64)
+        self.dtype = source.dtype
+        self.shape = (len(self.indices),)
+        self.strides = None
+
+    def __len__(self):
+        return len(self.indices)
+
+    def __iter__(self):
+        for idx in self.indices:
+            yield self.source[int(idx)].copy()
+
+    def __getitem__(self, item):
+        if isinstance(item, str):
+            return self.source[item][self.indices]
+        if isinstance(item, tuple):
+            raise TypeError("IndexedTable does not support tuple indexing")
+        selected = self.indices[item]
+        if np.isscalar(selected):
+            return self.source[int(selected)].copy()
+        return IndexedTable(self.source, selected)
+
+    def __array__(self, dtype=None):
+        array = self.source[self.indices]
+        if dtype is not None:
+            return np.asarray(array, dtype=dtype)
+        return np.asarray(array)
+
+
+class ConcatTable:
+    def __init__(self, parts):
+        self.parts = tuple(part for part in parts if len(part) > 0)
+        self.dtype = self.parts[0].dtype if self.parts else data_type
+        self.shape = (sum(len(part) for part in self.parts),)
+        self.strides = None
+
+    def __len__(self):
+        return self.shape[0]
+
+    def __iter__(self):
+        for part in self.parts:
+            for row in part:
+                yield row
+
+    def __getitem__(self, item):
+        if isinstance(item, str):
+            arrays = [part[item] for part in self.parts]
+            if not arrays:
+                return np.array([], dtype=self.dtype[item])
+            if len(arrays) == 1:
+                return arrays[0]
+            return np.concatenate(arrays)
+        if isinstance(item, tuple):
+            raise TypeError("ConcatTable does not support tuple indexing")
+        if isinstance(item, slice):
+            return np.array(list(self)[item], dtype=self.dtype)
+        position = int(item)
+        if position < 0:
+            position += len(self)
+        for part in self.parts:
+            if position < len(part):
+                return part[position]
+            position -= len(part)
+        raise IndexError(position)
+
+    def __array__(self, dtype=None):
+        arrays = [np.asarray(part) for part in self.parts]
+        if not arrays:
+            result = np.array([], dtype=self.dtype)
+        elif len(arrays) == 1:
+            result = arrays[0]
+        else:
+            result = np.concatenate(arrays)
+        if dtype is not None:
+            return np.asarray(result, dtype=dtype)
+        return np.asarray(result)
+
+
+def _warn_once(key, message):
+    if key in _WARNED_MESSAGES:
+        return
+    _WARNED_MESSAGES.add(key)
+    print(message, flush=True)
+
+
+def _normalize_table(table):
+    if hasattr(table, "resolve"):
+        return table.resolve()
+    return table
 
 
 def clear_query_caches():
@@ -42,6 +206,7 @@ def clear_query_caches():
     _GET_MATCHES_OF_CACHE.clear()
     _GET_MATCHED_BY_CACHE.clear()
     _TABLE_LABEL_INDEX.clear()
+    _TABLE_LABEL_VALUE_INDEX.clear()
     _TABLE_ZIPF_EXPRESSION_CACHE.clear()
     _TABLE_ROW_SIGNATURE_CACHE.clear()
     _ROW_FREQUENCY_CACHE.clear()
@@ -58,16 +223,74 @@ def clear_query_caches():
 
 def _get_label_index(label, table):
     """Build and cache an inverted index for a field of any table: value -> row indices."""
+    table = _normalize_table(table)
     tkey = (label, _table_cache_key(table))
     if tkey not in _TABLE_LABEL_INDEX:
-        col = table[label]
-        unique_vals, inverse = np.unique(col, return_inverse=True)
-        sort_order = np.argsort(inverse, kind="stable")
-        sorted_codes = inverse[sort_order]
-        splits = np.where(np.diff(sorted_codes))[0] + 1
-        groups = np.split(sort_order, splits)
-        _TABLE_LABEL_INDEX[tkey] = {str(unique_vals[i]): groups[i] for i in range(len(unique_vals))}
+        if isinstance(table, FilteredTable):
+            base_idx = _get_label_index(label, table.source)
+            filtered = {}
+            for value, indices in base_idx.items():
+                kept = table.filter_indices(indices)
+                if len(kept) > 0:
+                    filtered[str(value)] = kept
+            _TABLE_LABEL_INDEX[tkey] = filtered
+        elif isinstance(table, IndexedTable):
+            base_idx = _get_label_index(label, table.source)
+            filtered = {}
+            for value, indices in base_idx.items():
+                kept = np.intersect1d(indices, table.indices, assume_unique=False)
+                if len(kept) > 0:
+                    filtered[str(value)] = kept
+            _TABLE_LABEL_INDEX[tkey] = filtered
+        else:
+            col = table[label]
+            if len(col) > 100000:
+                grouped = defaultdict(list)
+                for idx, value in enumerate(col):
+                    grouped[str(value)].append(idx)
+                _TABLE_LABEL_INDEX[tkey] = {
+                    value: np.asarray(indices, dtype=np.int64)
+                    for value, indices in grouped.items()
+                }
+            else:
+                unique_vals, inverse = np.unique(col, return_inverse=True)
+                sort_order = np.argsort(inverse, kind="stable")
+                sorted_codes = inverse[sort_order]
+                splits = np.where(np.diff(sorted_codes))[0] + 1
+                groups = np.split(sort_order, splits)
+                _TABLE_LABEL_INDEX[tkey] = {str(unique_vals[i]): groups[i] for i in range(len(unique_vals))}
     return _TABLE_LABEL_INDEX[tkey]
+
+
+def _should_scan_exact_match(label, table):
+    table = _normalize_table(table)
+    if label not in _HIGH_CARDINALITY_EXACT_MATCH_LABELS:
+        return False
+    if isinstance(table, (FilteredTable, IndexedTable)):
+        return True
+    return len(table) > 100000
+
+
+def _get_label_value_indices(label, value, table):
+    table = _normalize_table(table)
+    value = str(value)
+    key = (label, value, _table_cache_key(table))
+    if key in _TABLE_LABEL_VALUE_INDEX:
+        return _TABLE_LABEL_VALUE_INDEX[key]
+    empty = np.array([], dtype=np.int64)
+    if isinstance(table, FilteredTable):
+        result = table.filter_indices(_get_label_value_indices(label, value, table.source))
+    elif isinstance(table, IndexedTable):
+        if len(table.indices) == 0:
+            result = empty
+        else:
+            result = table.indices[table.source[label][table.indices] == value]
+    elif _should_scan_exact_match(label, table):
+        result = np.flatnonzero(table[label] == value).astype(np.int64, copy=False)
+    else:
+        result = np.asarray(_get_label_index(label, table).get(value, empty), dtype=np.int64)
+    _TABLE_LABEL_VALUE_INDEX[key] = result
+    return result
 
 
 def _env_flag(name, default=False):
@@ -83,29 +306,147 @@ def _decode_entry(entry):
     return entry
 
 
-def _load_vocab_csv(path):
+def _load_vocab_csv(path, mmap_mode=None):
+    return _load_vocab_csv_runtime(path, mmap_mode=mmap_mode)
+
+
+def _load_vocab_csv_runtime(path, mmap_mode=None, exclude_acronym_nouns=False):
     if not path or not os.path.exists(path):
         return np.array([], dtype=data_type)
-    npy_cache = path + ".npy"
-    if os.path.exists(npy_cache) and os.path.getmtime(npy_cache) >= os.path.getmtime(path):
+    compact_cache = path + ".runtime.compact.npy"
+    if os.path.exists(compact_cache) and os.path.getmtime(compact_cache) >= os.path.getmtime(path):
         try:
-            return np.load(npy_cache, allow_pickle=False)
+            table = np.load(compact_cache, allow_pickle=False, mmap_mode=mmap_mode)
+            expected_names = tuple(field for field, _dtype in data_type)
+            if getattr(getattr(table, "dtype", None), "names", ()) == expected_names:
+                return table
         except Exception:
             pass
-    table = np.genfromtxt(path, delimiter=",", names=True, dtype=data_type)
-    if getattr(table, "shape", ()) == ():
-        table = np.array([table], dtype=data_type)
-    table = table.copy()
-    table["expression"] = np.char.replace(table["expression"], "!", "'")
     try:
-        np.save(npy_cache, table)
+        _write_compact_vocab_npy(path, compact_cache, exclude_acronym_nouns=exclude_acronym_nouns)
     except Exception:
-        pass
-    return table
+        legacy_cache = path + ".npy"
+        if os.path.exists(legacy_cache) and os.path.getmtime(legacy_cache) >= os.path.getmtime(path):
+            try:
+                return np.load(legacy_cache, allow_pickle=False, mmap_mode=mmap_mode)
+            except Exception:
+                pass
+        table = np.genfromtxt(path, delimiter=",", names=True, dtype=data_type)
+        if getattr(table, "shape", ()) == ():
+            table = np.array([table], dtype=data_type)
+        table = table.copy()
+        table["expression"] = np.char.replace(table["expression"], "!", "'")
+        table = _filter_runtime_vocab(table)
+        if exclude_acronym_nouns:
+            table = _filter_overlay_acronym_nouns(table)
+        return table
+    if os.path.exists(compact_cache):
+        try:
+            return np.load(compact_cache, allow_pickle=False, mmap_mode=mmap_mode)
+        except Exception:
+            pass
+    return np.array([], dtype=data_type)
+
+
+def _row_allowed(values, field_positions, exclude_acronym_nouns=False):
+    if values[field_positions["OOV_inductive_biases"]] == "1":
+        return False
+    if exclude_acronym_nouns and values[field_positions["noun"]] == "1":
+        expression = values[field_positions["expression"]]
+        if expression and not any(ch in "aeiouAEIOU" for ch in expression):
+            return False
+    return True
+
+
+def _infer_compact_dtype(path, exclude_acronym_nouns=False):
+    canonical_fields = [field for field, _dtype in data_type]
+    field_positions = {field: idx for idx, field in enumerate(canonical_fields)}
+    with open(path, newline="") as handle:
+        reader = csv.reader(handle)
+        next(reader, None)  # header row; runtime code uses canonical data_type order
+        max_widths = {field: 1 for field in canonical_fields}
+        row_count = 0
+        for row in reader:
+            values = [
+                (row[idx] if idx < len(row) else "").replace("!", "'") if field == "expression" else (row[idx] if idx < len(row) else "")
+                for idx, field in enumerate(canonical_fields)
+            ]
+            if not _row_allowed(values, field_positions, exclude_acronym_nouns=exclude_acronym_nouns):
+                continue
+            row_count += 1
+            for idx, field in enumerate(canonical_fields):
+                value = values[idx]
+                width = len(str(value))
+                if width > max_widths[field]:
+                    max_widths[field] = width
+    dtype = np.dtype([(field, "U%d" % max(1, max_widths[field])) for field in canonical_fields])
+    return canonical_fields, dtype, row_count
+
+
+def _write_compact_vocab_npy(csv_path, npy_path, exclude_acronym_nouns=False):
+    fieldnames, compact_dtype, row_count = _infer_compact_dtype(csv_path, exclude_acronym_nouns=exclude_acronym_nouns)
+    field_positions = {field: idx for idx, field in enumerate(fieldnames)}
+    tmp_path = npy_path + ".tmp.npy"
+    if os.path.exists(tmp_path):
+        os.remove(tmp_path)
+    table = np.lib.format.open_memmap(tmp_path, mode="w+", dtype=compact_dtype, shape=(row_count,))
+    with open(csv_path, newline="") as handle:
+        reader = csv.reader(handle)
+        next(reader, None)
+        out_idx = 0
+        for idx, row in enumerate(reader):
+            values = [
+                (row[field_idx] if field_idx < len(row) else "").replace("!", "'") if field == "expression" else (row[field_idx] if field_idx < len(row) else "")
+                for field_idx, field in enumerate(fieldnames)
+            ]
+            if not _row_allowed(values, field_positions, exclude_acronym_nouns=exclude_acronym_nouns):
+                continue
+            for field_idx, field in enumerate(fieldnames):
+                table[field][out_idx] = values[field_idx]
+            out_idx += 1
+    table.flush()
+    del table
+    os.replace(tmp_path, npy_path)
+
+
+def _max_load_bytes(env_var, default_bytes):
+    raw = os.environ.get(env_var, os.environ.get("FREQBLIMP_MAX_JSON_LOAD_BYTES"))
+    if raw is None or str(raw).strip() == "":
+        return int(default_bytes)
+    value = int(raw)
+    if value <= 0:
+        return None
+    return value
+
+
+def _skip_large_json_load(path, env_var, default_bytes, label):
+    if _env_flag("FREQBLIMP_ALLOW_LARGE_JSON_LOADS", default=False):
+        return False
+    if not path or not os.path.exists(path):
+        return False
+    limit = _max_load_bytes(env_var, default_bytes)
+    if limit is None:
+        return False
+    size = os.path.getsize(path)
+    if size <= limit:
+        return False
+    _warn_once(
+        (label, path),
+        "[freq-blimp] skipping %s load for %s (%.1f MiB > %.1f MiB limit); falling back to lazy lookups"
+        % (label, path, size / (1024 * 1024), limit / (1024 * 1024)),
+    )
+    return True
 
 
 def _load_overlay_manifest(path):
     if not path or not os.path.exists(path):
+        return {}
+    if _skip_large_json_load(
+        path,
+        "FREQBLIMP_MAX_MANIFEST_LOAD_BYTES",
+        default_bytes=64 * 1024 * 1024,
+        label="overlay manifest",
+    ):
         return {}
     try:
         with open(path) as handle:
@@ -282,6 +623,13 @@ def write_frequency_cache(cache, path=DEFAULT_FREQUENCY_CACHE_PATH):
 def _load_frequency_cache(path):
     if not path or not os.path.exists(path):
         return {}
+    if _skip_large_json_load(
+        path,
+        "FREQBLIMP_MAX_FREQUENCY_CACHE_LOAD_BYTES",
+        default_bytes=64 * 1024 * 1024,
+        label="frequency cache",
+    ):
+        return {}
     try:
         with open(path) as handle:
             payload = json.load(handle)
@@ -310,28 +658,125 @@ def _load_frequency_cache(path):
     return cache
 
 
+def _overlay_acronym_noun_mask(table):
+    """Rows that look like lowercased acronyms (no standard vowels, e.g. 'nlp', 'mvp', 'psf')."""
+    return _acronym_like_mask(table["noun"], table["expression"])
+
+
 def _filter_overlay_acronym_nouns(table):
-    """Remove noun rows that look like lowercased acronyms (no standard vowels, e.g. 'nlp', 'mvp', 'psf')."""
-    is_noun = table["noun"] == "1"
-    if not np.any(is_noun):
+    return table[~_overlay_acronym_noun_mask(table)]
+
+
+def _is_composite_table(table):
+    return isinstance(table, (tuple, ConcatTable))
+
+
+def _iter_tables(table):
+    if isinstance(table, ConcatTable):
+        return table.parts
+    if isinstance(table, tuple):
         return table
-    expressions = np.asarray(table["expression"], dtype=str)
-    has_vowel = np.zeros(len(table), dtype=bool)
-    for v in "aeiouAEIOU":
-        has_vowel |= np.char.find(expressions, v) >= 0
-    acronym_mask = is_noun & ~has_vowel
-    return table[~acronym_mask]
+    return (table,)
+
+
+def _concat_query_results(parts, dtype):
+    nonempty = [part for part in parts if len(part) > 0]
+    if not nonempty:
+        return np.array([], dtype=dtype)
+    if len(nonempty) == 1:
+        return nonempty[0]
+    return ConcatTable(nonempty)
+
+
+def _table_slice_result(table, indices):
+    if indices is None or len(indices) == 0:
+        return np.array([], dtype=table.dtype)
+    if isinstance(table, np.memmap):
+        return IndexedTable(table, indices)
+    return table[indices]
+
+
+def _parts_by_source(table):
+    table = _normalize_table(table)
+    if isinstance(table, ConcatTable):
+        merged = {}
+        for part in table.parts:
+            for key, (source, indices) in _parts_by_source(part).items():
+                if key in merged:
+                    merged[key] = (source, np.union1d(merged[key][1], indices))
+                else:
+                    merged[key] = (source, np.asarray(indices, dtype=np.int64))
+        return merged
+    if isinstance(table, IndexedTable):
+        return {id(table.source): (table.source, np.asarray(table.indices, dtype=np.int64))}
+    if isinstance(table, FilteredTable):
+        indices = np.asarray(table.resolve_indices(), dtype=np.int64)
+        return {id(table.source): (table.source, indices)}
+    return None
+
+
+def _table_from_parts_map(parts_map, dtype=data_type):
+    if not parts_map:
+        return np.array([], dtype=dtype)
+    parts = [IndexedTable(source, indices) for _key, (source, indices) in sorted(parts_map.items(), key=lambda item: item[0]) if len(indices) > 0]
+    return _concat_query_results(parts, dtype)
+
+
+def table_union1d(left, right):
+    left_parts = _parts_by_source(left)
+    right_parts = _parts_by_source(right)
+    if left_parts is None or right_parts is None:
+        return np.union1d(np.asarray(_normalize_table(left)), np.asarray(_normalize_table(right)))
+    merged = dict(left_parts)
+    for key, (source, indices) in right_parts.items():
+        if key in merged:
+            merged[key] = (source, np.union1d(merged[key][1], indices))
+        else:
+            merged[key] = (source, np.asarray(indices, dtype=np.int64))
+    dtype = getattr(_normalize_table(left), "dtype", getattr(_normalize_table(right), "dtype", data_type))
+    return _table_from_parts_map(merged, dtype=dtype)
+
+
+def table_intersect1d(left, right):
+    left_parts = _parts_by_source(left)
+    right_parts = _parts_by_source(right)
+    if left_parts is None or right_parts is None:
+        return np.intersect1d(np.asarray(_normalize_table(left)), np.asarray(_normalize_table(right)))
+    merged = {}
+    for key, (source, indices) in left_parts.items():
+        if key not in right_parts:
+            continue
+        kept = np.intersect1d(indices, right_parts[key][1], assume_unique=False)
+        if len(kept) > 0:
+            merged[key] = (source, kept)
+    dtype = getattr(_normalize_table(left), "dtype", getattr(_normalize_table(right), "dtype", data_type))
+    return _table_from_parts_map(merged, dtype=dtype)
+
+
+def table_setdiff1d(left, right):
+    left_parts = _parts_by_source(left)
+    right_parts = _parts_by_source(right)
+    if left_parts is None or right_parts is None:
+        return np.setdiff1d(np.asarray(_normalize_table(left)), np.asarray(_normalize_table(right)))
+    merged = {}
+    for key, (source, indices) in left_parts.items():
+        if key in right_parts:
+            kept = np.setdiff1d(indices, right_parts[key][1], assume_unique=False)
+        else:
+            kept = indices
+        if len(kept) > 0:
+            merged[key] = (source, kept)
+    dtype = getattr(_normalize_table(left), "dtype", data_type)
+    return _table_from_parts_map(merged, dtype=dtype)
 
 
 def _build_runtime_vocab():
-    base_vocab = _load_vocab_csv(BASE_VOCAB_PATH)
+    base_vocab = _load_vocab_csv_runtime(BASE_VOCAB_PATH, mmap_mode="r", exclude_acronym_nouns=False)
     if _env_flag("FREQBLIMP_USE_OVERLAY", default=False):
         overlay_path = os.environ.get("FREQBLIMP_VOCAB_OVERLAY", DEFAULT_OVERLAY_PATH)
-        overlay_vocab = _load_vocab_csv(overlay_path)
+        overlay_vocab = _load_vocab_csv_runtime(overlay_path, mmap_mode="r", exclude_acronym_nouns=True)
         if len(overlay_vocab) > 0:
-            overlay_vocab = _filter_overlay_acronym_nouns(overlay_vocab)
-            # copy=False avoids an extra ~3.9 GB allocation when dtype already matches
-            return np.concatenate([base_vocab, overlay_vocab]).astype(data_type, copy=False)
+            return (base_vocab, overlay_vocab)
     return base_vocab
 
 
@@ -339,9 +784,9 @@ def _filter_runtime_vocab(table):
     return table[table["OOV_inductive_biases"] != "1"]
 
 
-# Build and filter in one expression so the unfiltered intermediate table is
-# not kept alive as a persistent module-level global (~3.9 GB with overlay).
-vocab = _filter_runtime_vocab(_build_runtime_vocab())
+# Build once at import time. Overlay mode uses an on-disk memmap cache so the
+# runtime vocabulary does not have to exist as a giant in-memory ndarray.
+vocab = _build_runtime_vocab()
 
 # Lazy-loaded structures — only built on first access (avoids O(N) startup cost with large overlays)
 _OVERLAY_METADATA_REGISTRY = None
@@ -443,8 +888,14 @@ def _zipf_for_cached_expression(expression):
 
 
 def get_table_zipf_expression(table):
+    table = _normalize_table(table)
     key = _table_cache_key(table)
     if key not in _TABLE_ZIPF_EXPRESSION_CACHE:
+        if _is_composite_table(table):
+            _TABLE_ZIPF_EXPRESSION_CACHE[key] = np.concatenate(
+                [get_table_zipf_expression(part) for part in table if len(part) > 0]
+            ) if any(len(part) > 0 for part in table) else np.array([], dtype=np.float32)
+            return _TABLE_ZIPF_EXPRESSION_CACHE[key]
         expressions = np.asarray(table["expression"], dtype=str)
         unique_expressions, inverse = np.unique(expressions, return_inverse=True)
         unique_zipf = np.array(
@@ -456,6 +907,24 @@ def get_table_zipf_expression(table):
 
 
 def _table_cache_key(table):
+    table = _normalize_table(table)
+    if isinstance(table, ConcatTable):
+        return ("concat", tuple(_table_cache_key(part) for part in table.parts))
+    if isinstance(table, tuple):
+        return tuple(_table_cache_key(part) for part in table)
+    if isinstance(table, FilteredTable):
+        return ("filtered", _table_cache_key(table.source), bool(table.exclude_acronym_nouns))
+    if isinstance(table, IndexedTable):
+        interface = getattr(table.indices, "__array_interface__", None)
+        data_ptr = None
+        if interface and interface.get("data"):
+            data_ptr = interface["data"][0]
+        return (
+            "indexed",
+            _table_cache_key(table.source),
+            data_ptr,
+            len(table.indices),
+        )
     interface = getattr(table, "__array_interface__", None)
     data_ptr = None
     if interface and interface.get("data"):
@@ -470,11 +939,18 @@ def get_all(label, value, table=vocab):
     :param table: ndarray of vocab items.
     :return: table restricted to all entries with "value" in field "label"
     """
+    table = _normalize_table(table)
     key = (label, value, _table_cache_key(table))
     if key not in _GET_ALL_CACHE:
-        idx = _get_label_index(label, table)
-        indices = idx.get(str(value))
-        _GET_ALL_CACHE[key] = table[indices] if indices is not None else np.array([], dtype=table.dtype)
+        if _is_composite_table(table):
+            parts = [get_all(label, value, part) for part in _iter_tables(table)]
+            dtype = next((part.dtype for part in _iter_tables(table)), data_type)
+            _GET_ALL_CACHE[key] = _concat_query_results(parts, dtype)
+        elif isinstance(table, (FilteredTable, IndexedTable)):
+            indices = _get_label_value_indices(label, value, table)
+            _GET_ALL_CACHE[key] = IndexedTable(table.source, indices) if len(indices) > 0 else np.array([], dtype=table.dtype)
+        else:
+            _GET_ALL_CACHE[key] = _table_slice_result(table, _get_label_value_indices(label, value, table))
     return _GET_ALL_CACHE[key]
 
 def get_all_conjunctive(labels_values, table=vocab):
@@ -482,14 +958,19 @@ def get_all_conjunctive(labels_values, table=vocab):
     :param labels_values: list of (l,v) pairs: [(l1, v1), (l2, v2), (l3, v3)]
     :return: vocab items with the given value for each label
     """
+    table = _normalize_table(table)
     key = (tuple(labels_values), _table_cache_key(table))
     if key not in _GET_ALL_CONJ_CACHE:
+        if _is_composite_table(table):
+            parts = [get_all_conjunctive(labels_values, part) for part in _iter_tables(table)]
+            dtype = next((part.dtype for part in _iter_tables(table)), data_type)
+            _GET_ALL_CONJ_CACHE[key] = _concat_query_results(parts, dtype)
+            return _GET_ALL_CONJ_CACHE[key]
         # Intersect index sets from smallest to largest (early-exit if any is empty)
         idx_sets = []
         for label, value in labels_values:
-            idx = _get_label_index(label, table)
-            arr = idx.get(str(value))
-            if arr is None or len(arr) == 0:
+            arr = _get_label_value_indices(label, value, table)
+            if len(arr) == 0:
                 _GET_ALL_CONJ_CACHE[key] = np.array([], dtype=table.dtype)
                 return _GET_ALL_CONJ_CACHE[key]
             idx_sets.append(arr)
@@ -499,7 +980,10 @@ def get_all_conjunctive(labels_values, table=vocab):
             result_indices = np.intersect1d(result_indices, other, assume_unique=True)
             if len(result_indices) == 0:
                 break
-        _GET_ALL_CONJ_CACHE[key] = table[result_indices]
+        if isinstance(table, (FilteredTable, IndexedTable)):
+            _GET_ALL_CONJ_CACHE[key] = IndexedTable(table.source, result_indices)
+        else:
+            _GET_ALL_CONJ_CACHE[key] = _table_slice_result(table, result_indices)
     return _GET_ALL_CONJ_CACHE[key]
 
 
@@ -514,8 +998,14 @@ def get_matches_of(row, label, table=vocab):
     if value == "":
         pass
     else:
+        table = _normalize_table(table)
         key = (row_signature(row), label, _table_cache_key(table))
         if key not in _GET_MATCHES_OF_CACHE:
+            if _is_composite_table(table):
+                parts = [get_matches_of(row, label, part) for part in _iter_tables(table)]
+                dtype = next((part.dtype for part in _iter_tables(table)), data_type)
+                _GET_MATCHES_OF_CACHE[key] = _concat_query_results(parts, dtype)
+                return _GET_MATCHES_OF_CACHE[key]
             disjuncts = value.split(";")
             if len(disjuncts) == 1:
                 result = get_all_conjunctive(conj_list(disjuncts[0]), table)
@@ -541,7 +1031,7 @@ def get_matches_of_conj(rows_labels, table=vocab):
     :param table: ndarray of vocab items.
     :return: all entries in table that match the selectional restrictions of all rows as given by labels.
     """
-    to_return = table
+    to_return = _normalize_table(table)
     for row, label in rows_labels:
         value = str(row[label])
         if value == "":
@@ -558,15 +1048,24 @@ def get_matched_by(row, label, table=vocab):
     :param table: ndarray of vocab items.
     :return: all entries in table whose selectional restrictions in label are matched by row.
     """
+    table = _normalize_table(table)
     key = (row_signature(row), label, _table_cache_key(table))
     if key not in _GET_MATCHED_BY_CACHE:
-        idx = _get_label_index(label, table)
-        passing_indices = [indices for val, indices in idx.items() if is_match_disj(row, val)]
-        if passing_indices:
-            result_indices = np.concatenate(passing_indices)
-            result = table[result_indices]
+        if _is_composite_table(table):
+            parts = [get_matched_by(row, label, part) for part in _iter_tables(table)]
+            dtype = next((part.dtype for part in _iter_tables(table)), data_type)
+            result = _concat_query_results(parts, dtype)
         else:
-            result = np.array([], dtype=table.dtype)
+            idx = _get_label_index(label, table)
+            passing_indices = [indices for val, indices in idx.items() if is_match_disj(row, val)]
+            if passing_indices:
+                result_indices = np.concatenate(passing_indices)
+                if isinstance(table, (FilteredTable, IndexedTable)):
+                    result = IndexedTable(table.source, result_indices)
+                else:
+                    result = _table_slice_result(table, result_indices)
+            else:
+                result = np.array([], dtype=table.dtype)
         if len(_GET_MATCHED_BY_CACHE) >= _RESULT_CACHE_MAX:
             _GET_MATCHED_BY_CACHE.clear()
         _GET_MATCHED_BY_CACHE[key] = result

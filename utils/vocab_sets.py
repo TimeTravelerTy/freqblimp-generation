@@ -70,7 +70,7 @@ all_inanimate_nouns = _lazy("all_inanimate_nouns", lambda: get_all("animate", "0
 all_documents = _lazy("all_documents", lambda: get_all_conjunctive([("category", "N"), ("document", "1")]))
 all_gendered_nouns = _lazy(
     "all_gendered_nouns",
-    lambda: np.union1d(get_all("gender", "m"), get_all("gender", "f")),
+    lambda: table_union1d(get_all("gender", "m"), get_all("gender", "f")),
 )
 all_singular_neuter_animate_nouns = _lazy(
     "all_singular_neuter_animate_nouns",
@@ -79,7 +79,7 @@ all_singular_neuter_animate_nouns = _lazy(
 all_plural_nouns = _lazy("all_plural_nouns", lambda: get_all_conjunctive([("category", "N"), ("pl", "1")]))
 all_plural_animate_nouns = _lazy(
     "all_plural_animate_nouns",
-    lambda: np.intersect1d(all_animate_nouns, all_plural_nouns),
+    lambda: table_intersect1d(all_animate_nouns, all_plural_nouns),
 )
 all_common_nouns = _lazy("all_common_nouns", lambda: get_all_conjunctive([("category", "N"), ("properNoun", "0")]))
 all_relational_nouns = _lazy("all_relational_nouns", lambda: get_all("category", "N/NP"))
@@ -93,7 +93,7 @@ all_transitive_verbs = _lazy("all_transitive_verbs", lambda: get_all("category",
 all_intransitive_verbs = _lazy("all_intransitive_verbs", lambda: get_all("category", "S\\NP"))
 all_non_recursive_verbs = _lazy(
     "all_non_recursive_verbs",
-    lambda: np.union1d(all_transitive_verbs, all_intransitive_verbs),
+    lambda: table_union1d(all_transitive_verbs, all_intransitive_verbs),
 )
 all_finite_verbs = _lazy("all_finite_verbs", lambda: get_all("finite", "1", all_verbs))
 all_non_finite_verbs = _lazy("all_non_finite_verbs", lambda: get_all("finite", "0", all_verbs))
@@ -120,7 +120,7 @@ all_refl_nonverbal_predicates = _lazy(
     "all_refl_nonverbal_predicates",
     lambda: (lambda predicates: predicates[predicates["arg_1"] == predicates["arg_2"]])(get_all("category_2", "Pred")),
 )
-all_refl_preds = _lazy("all_refl_preds", lambda: reduce(np.union1d, (all_anim_anim_verbs, all_doc_doc_verbs)))
+all_refl_preds = _lazy("all_refl_preds", lambda: reduce(table_union1d, (all_anim_anim_verbs, all_doc_doc_verbs)))
 all_non_plural_transitive_verbs = _lazy(
     "all_non_plural_transitive_verbs",
     lambda: (lambda arg_1: all_transitive_verbs[(np.char.find(arg_1, "sg=0") < 0) & (np.char.find(arg_1, "pl=1") < 0)])(
@@ -137,23 +137,23 @@ all_strictly_singular_verbs = _lazy(
 )
 all_strictly_plural_transitive_verbs = _lazy(
     "all_strictly_plural_transitive_verbs",
-    lambda: np.intersect1d(all_strictly_plural_verbs, all_transitive_verbs),
+    lambda: table_intersect1d(all_strictly_plural_verbs, all_transitive_verbs),
 )
 all_strictly_singular_transitive_verbs = _lazy(
     "all_strictly_singular_transitive_verbs",
-    lambda: np.intersect1d(all_strictly_singular_verbs, all_transitive_verbs),
+    lambda: table_intersect1d(all_strictly_singular_verbs, all_transitive_verbs),
 )
 all_possibly_plural_verbs = _lazy(
     "all_possibly_plural_verbs",
-    lambda: np.setdiff1d(all_verbs, all_strictly_singular_verbs),
+    lambda: table_setdiff1d(all_verbs, all_strictly_singular_verbs),
 )
 all_possibly_singular_verbs = _lazy(
     "all_possibly_singular_verbs",
-    lambda: np.setdiff1d(all_verbs, all_strictly_plural_verbs),
+    lambda: table_setdiff1d(all_verbs, all_strictly_plural_verbs),
 )
 all_non_finite_transitive_verbs = _lazy(
     "all_non_finite_transitive_verbs",
-    lambda: np.intersect1d(all_non_finite_verbs, all_transitive_verbs),
+    lambda: table_intersect1d(all_non_finite_verbs, all_transitive_verbs),
 )
 all_non_finite_intransitive_verbs = _lazy(
     "all_non_finite_intransitive_verbs",
@@ -170,13 +170,13 @@ all_negated_auxs = _lazy("all_negated_auxs", lambda: get_all("negated", "1", all
 all_non_negated_auxs = _lazy("all_non_negated_auxs", lambda: get_all("negated", "0", all_auxs))
 
 all_copulas = _lazy("all_copulas", lambda: get_all("category_2", "copula"))
-all_finite_copulas = _lazy("all_finite_copulas", lambda: np.setdiff1d(all_copulas, get_all("bare", "1")))
+all_finite_copulas = _lazy("all_finite_copulas", lambda: table_setdiff1d(all_copulas, get_all("bare", "1")))
 all_rogatives = _lazy("all_rogatives", lambda: get_all("category", "(S\\NP)/Q"))
 
-all_agreeing_aux = _lazy("all_agreeing_aux", lambda: np.setdiff1d(all_auxs, get_all("arg_1", "sg=1;sg=0")))
+all_agreeing_aux = _lazy("all_agreeing_aux", lambda: table_setdiff1d(all_auxs, get_all("arg_1", "sg=1;sg=0")))
 all_non_negative_agreeing_aux = _lazy("all_non_negative_agreeing_aux", lambda: get_all("negated", "0", all_agreeing_aux))
 all_negative_agreeing_aux = _lazy("all_negative_agreeing_aux", lambda: get_all("negated", "1", all_agreeing_aux))
-all_auxiliaries_no_null = _lazy("all_auxiliaries_no_null", lambda: np.setdiff1d(all_auxs, get_all("expression", "")))
+all_auxiliaries_no_null = _lazy("all_auxiliaries_no_null", lambda: table_setdiff1d(all_auxs, get_all("expression", "")))
 all_non_negative_copulas = _lazy("all_non_negative_copulas", lambda: get_all("negated", "0", all_finite_copulas))
 all_negative_copulas = _lazy("all_negative_copulas", lambda: get_all("negated", "1", all_finite_copulas))
 

@@ -20,10 +20,10 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
                          lexically_identical=False)
         self.all_inanim_subj_allowing_verbs = get_matched_by(choice(all_inanimate_nouns), "arg_1", all_transitive_verbs)
         self.all_anim_subj_allowing_verbs = get_matched_by(choice(all_animate_nouns), "arg_1", all_transitive_verbs)
-        self.all_anim_subj_verbs = np.setdiff1d(self.all_anim_subj_allowing_verbs, self.all_inanim_subj_allowing_verbs)
+        self.all_anim_subj_verbs = table_setdiff1d(self.all_anim_subj_allowing_verbs, self.all_inanim_subj_allowing_verbs)
         self.dets = ['the', 'some']
         self.location_nouns = get_all("locale", "1")
-        self.nonlocation_commonnouns = np.setdiff1d(all_common_nouns, self.location_nouns)
+        self.nonlocation_commonnouns = table_setdiff1d(all_common_nouns, self.location_nouns)
 
     def sample(self):
         # The boy was talked to by the woman

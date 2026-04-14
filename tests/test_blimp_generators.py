@@ -6,7 +6,10 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
+
+import numpy as np
 
 from generation_projects.blimp import build_overlay as build_overlay_module
 from generation_projects.blimp.overlay_coverage import (
@@ -293,6 +296,75 @@ class BlimpOverlaySmokeTests(unittest.TestCase):
                 for payload in payloads:
                     self.assertNotEqual(payload["sentence_good"], payload["sentence_bad"])
 
+
+class VocabTableMemorySafetyTests(unittest.TestCase):
+    def tearDown(self):
+        for name in (
+            "FREQBLIMP_MAX_FREQUENCY_CACHE_LOAD_BYTES",
+            "FREQBLIMP_MAX_MANIFEST_LOAD_BYTES",
+            "FREQBLIMP_MAX_JSON_LOAD_BYTES",
+            "FREQBLIMP_ALLOW_LARGE_JSON_LOADS",
+        ):
+            os.environ.pop(name, None)
+        clear_query_caches()
+
+    def test_large_frequency_cache_load_is_skipped_by_default(self):
+        import utils.vocab_table as vocab_table
+
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
+            json.dump({"format_version": 2, "expressions": {"hello": 4.2}}, handle)
+            path = handle.name
+        try:
+            os.environ["FREQBLIMP_MAX_FREQUENCY_CACHE_LOAD_BYTES"] = "1"
+            self.assertEqual(vocab_table._load_frequency_cache(path), {})
+        finally:
+            os.remove(path)
+
+    def test_large_overlay_manifest_load_is_skipped_by_default(self):
+        import utils.vocab_table as vocab_table
+
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
+            json.dump({"rows": [{"row_signature": "x", "source": "overlay"}]}, handle)
+            path = handle.name
+        try:
+            os.environ["FREQBLIMP_MAX_MANIFEST_LOAD_BYTES"] = "1"
+            self.assertEqual(vocab_table._load_overlay_manifest(path), {})
+        finally:
+            os.remove(path)
+
+    def test_composite_query_merges_base_and_overlay_without_building_runtime_table(self):
+        import utils.vocab_table as vocab_table
+
+        sample_source = vocab_table.get_runtime_vocab()
+        if isinstance(sample_source, tuple):
+            sample_source = sample_source[0]
+        sample_source = getattr(sample_source, "source", sample_source)
+        base_rows = sample_source[:2].copy()
+        overlay_rows = sample_source[:2].copy()
+        base_rows["expression"][0] = "base_only_token"
+        base_rows["expression"][1] = "shared_token"
+        overlay_rows["expression"][0] = "overlay_only_token"
+        overlay_rows["expression"][1] = "shared_token"
+
+        combined = (base_rows, overlay_rows)
+        merged = vocab_table.get_all("expression", "shared_token", combined)
+        self.assertEqual(len(merged), 2)
+        overlay_only = vocab_table.get_all("expression", "overlay_only_token", combined)
+        self.assertEqual(len(overlay_only), 1)
+
+    def test_large_expression_lookup_avoids_building_full_label_index(self):
+        import utils.vocab_table as vocab_table
+
+        table = np.zeros(100001, dtype=[("expression", "U16"), ("root", "U16")])
+        table["expression"][:-1] = "filler"
+        table["expression"][-1] = "needle"
+        table["root"][:] = "root"
+
+        with mock.patch.object(vocab_table, "_get_label_index", side_effect=AssertionError("unexpected full index build")):
+            result = vocab_table.get_all("expression", "needle", table)
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(str(result[0]["expression"]), "needle")
 
 if __name__ == "__main__":
     unittest.main()

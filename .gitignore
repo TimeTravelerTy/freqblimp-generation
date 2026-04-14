@@ -4,6 +4,7 @@ CODEX_README.md
 logs/
 outputs/overlay_qc*
 outputs/inductive_biases
+outputs/tsubame_runs
 .idea/
 View_Vocab.xlsx
 *.pyc
@@ -128,3 +129,8 @@ vocabulary.csv.npy
 vocabulary_overlay.csv.npy
 outputs/cache/
 outputs/blimp_overlay_smoke/
+vocabulary.csv.compact.npy
+vocabulary.csv.runtime.compact.npy
+vocabulary_overlay.csv.compact.npy
+vocabulary_overlay.csv.runtime.compact.npy
+outputs/blimp/*.manifest.json

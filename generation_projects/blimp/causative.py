@@ -15,7 +15,7 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
                          two_prefix_method=False,
                          lexically_identical=False)
 
-        self.alternating_verbs = np.union1d(get_all("causative", "1"), get_all("inchoative", "1"))
+        self.alternating_verbs = table_union1d(get_all("causative", "1"), get_all("inchoative", "1"))
         self.non_alternating_intransitives = get_all("causative", "0", all_intransitive_verbs)
         self.all_singulars = get_all("sg", "1", all_nominals)
         self.all_plurals = get_all("sg", "0", all_nominals)
@@ -31,9 +31,9 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
             if V_cause["category"] == "S\\NP":
                 Obj = N_to_DP_mutate(choice(get_matches_of(V_cause, "arg_1", all_nominals)))
                 if V_cause["3sg"] == "1":
-                    Subj = N_to_DP_mutate(choice(np.intersect1d(all_animate_nouns, self.all_singulars)))
+                    Subj = N_to_DP_mutate(choice(table_intersect1d(all_animate_nouns, self.all_singulars)))
                 elif V_cause["pres"] == "1":
-                    Subj = N_to_DP_mutate(choice(np.intersect1d(all_animate_nouns, self.all_plurals)))
+                    Subj = N_to_DP_mutate(choice(table_intersect1d(all_animate_nouns, self.all_plurals)))
                 else:
                     Subj = N_to_DP_mutate(choice(all_animate_nouns))
             else:
@@ -43,9 +43,9 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
             Aux = return_aux(V_cause, Subj)
 
             if Subj["sg"] == "1":
-                safe_verbs = np.intersect1d(self.non_alternating_intransitives, all_possibly_singular_verbs)
+                safe_verbs = table_intersect1d(self.non_alternating_intransitives, all_possibly_singular_verbs)
             else:
-                safe_verbs = np.intersect1d(self.non_alternating_intransitives, all_possibly_plural_verbs)
+                safe_verbs = table_intersect1d(self.non_alternating_intransitives, all_possibly_plural_verbs)
             bad_candidates = filter_rows_for_active_zipf(
                 get_matched_by(Obj, "arg_1", get_matches_of(Aux, "arg_2", safe_verbs)),
                 "verb",

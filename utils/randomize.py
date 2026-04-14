@@ -152,9 +152,11 @@ def _policy_candidates(candidates):
         return None, None, None, None, None
     if controlled_pos not in policy.controlled_pos_set:
         return None, None, None, None, None
+    lower, upper = policy.bounds_for(controlled_pos)
+    if lower is None and upper is None and not policy.zipf_weighted_sampling and not _TRACE_ENABLED:
+        return None, None, None, None, None
     from utils.vocab_table import get_table_zipf_expression
     zipf_values = get_table_zipf_expression(candidates)
-    lower, upper = policy.bounds_for(controlled_pos)
     eligible_mask = np.ones(len(candidates), dtype=bool)
     if lower is not None:
         eligible_mask &= zipf_values >= lower
