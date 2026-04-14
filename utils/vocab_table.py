@@ -163,6 +163,20 @@ class ConcatTable:
             raise TypeError("ConcatTable does not support tuple indexing")
         if isinstance(item, slice):
             return np.array(list(self)[item], dtype=self.dtype)
+        if isinstance(item, np.ndarray):
+            if item.dtype == bool:
+                # Boolean mask: split across parts by offset
+                result_parts = []
+                offset = 0
+                for part in self.parts:
+                    n = len(part)
+                    sub_mask = item[offset:offset + n]
+                    if np.any(sub_mask):
+                        result_parts.append(part[sub_mask])
+                    offset += n
+                return _concat_query_results(result_parts, self.dtype) if result_parts else np.array([], dtype=self.dtype)
+            # Integer array indexing — materialise and delegate
+            return np.asarray(self)[item]
         position = int(item)
         if position < 0:
             position += len(self)
