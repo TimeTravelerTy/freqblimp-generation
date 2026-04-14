@@ -103,7 +103,7 @@ def verb_args_from_verb(verb, frequent=True, subj=None, aux=None, allow_negated=
         if allow_recursion:
             VP = V_to_VP_mutate(choice(get_matched_by(obj, "arg_1", all_ing_verbs)), frequent=frequent, aux=False)
         else:
-            safe_verbs = np.intersect1d(all_ing_verbs, all_non_recursive_verbs)
+            safe_verbs = table_intersect1d(all_ing_verbs, all_non_recursive_verbs)
             VP = V_to_VP_mutate(choice(get_matched_by(obj, "arg_1", safe_verbs)), frequent=frequent, aux=False)
         VP[0] = "from " + VP[0]
         args["args"] = [obj, VP]
@@ -113,7 +113,7 @@ def verb_args_from_verb(verb, frequent=True, subj=None, aux=None, allow_negated=
         if allow_recursion:
             v_emb = choice(all_bare_verbs)
         else:
-            safe_verbs = np.intersect1d(all_bare_verbs, all_non_recursive_verbs)
+            safe_verbs = table_intersect1d(all_bare_verbs, all_non_recursive_verbs)
             v_emb = choice(safe_verbs)
         args_emb = verb_args_from_verb(v_emb, frequent)
         VP = V_to_VP_mutate(v_emb, frequent=frequent, args=args_emb, aux=False)
@@ -126,7 +126,7 @@ def verb_args_from_verb(verb, frequent=True, subj=None, aux=None, allow_negated=
         if allow_recursion:
             v_emb = choice(get_matched_by(obj, "arg_1", all_bare_verbs))
         else:
-            safe_verbs = np.intersect1d(all_bare_verbs, all_non_recursive_verbs)
+            safe_verbs = table_intersect1d(all_bare_verbs, all_non_recursive_verbs)
             v_emb = choice(get_matched_by(obj, "arg_1", safe_verbs))
         VP = V_to_VP_mutate(v_emb, frequent=frequent, aux=False)
         VP[0] = "to " + VP[0]
@@ -151,7 +151,7 @@ def verb_args_from_verb(verb, frequent=True, subj=None, aux=None, allow_negated=
         if allow_recursion:
             v_emb = choice(get_matched_by(subj, "arg_1", all_bare_verbs))
         else:
-            safe_verbs = np.intersect1d(all_bare_verbs, all_non_recursive_verbs)
+            safe_verbs = table_intersect1d(all_bare_verbs, all_non_recursive_verbs)
             v_emb = choice(get_matched_by(subj, "arg_1", safe_verbs))
         VP = V_to_VP_mutate(v_emb, frequent=frequent, aux=False)
         VP[0] = "to " + VP[0]
@@ -162,7 +162,7 @@ def verb_args_from_verb(verb, frequent=True, subj=None, aux=None, allow_negated=
         if allow_recursion:
             v_emb = choice(all_bare_verbs)
         else:
-            safe_verbs = np.intersect1d(all_bare_verbs, all_non_recursive_verbs)
+            safe_verbs = table_intersect1d(all_bare_verbs, all_non_recursive_verbs)
             v_emb = choice(get_matched_by(subj, "arg_1", safe_verbs))
         args_emb = verb_args_from_verb(v_emb, frequent, subj=False)
         VP = V_to_VP_mutate(v_emb, frequent=frequent, args=args_emb, aux=False)
@@ -301,7 +301,7 @@ def noun_args_from_noun(noun, frequent=True, allow_recursion=False, allow_quanti
 
     determiner_space = all_frequent_determiners if frequent else all_determiners
     if avoid is not None:
-        determiner_space = np.setdiff1d(determiner_space, avoid)
+        determiner_space = table_setdiff1d(determiner_space, avoid)
     if allow_quantifiers:
         args["det"] = choice(get_matched_by(noun, "arg_1", determiner_space))
     else:
@@ -311,20 +311,20 @@ def noun_args_from_noun(noun, frequent=True, allow_recursion=False, allow_quanti
     if noun["category"] == "N/NP":
         noun_space = _content_sample_space(frequent, "noun")
         if avoid is not None:
-            noun_space = np.setdiff1d(noun_space, avoid)
+            noun_space = table_setdiff1d(noun_space, avoid)
         if allow_recursion:
-            obj = N_to_DP_mutate(choice(get_matches_of(noun, "arg_1", np.intersect1d(all_nominals, noun_space))))
+            obj = N_to_DP_mutate(choice(get_matches_of(noun, "arg_1", table_intersect1d(all_nominals, noun_space))))
         else:
-            obj = N_to_DP_mutate(choice(get_matches_of(noun, "arg_1", np.intersect1d(all_nouns, noun_space))))
+            obj = N_to_DP_mutate(choice(get_matches_of(noun, "arg_1", table_intersect1d(all_nouns, noun_space))))
         args["args"] = [obj]
     if noun["category"] == "N\\NP[poss]":
         noun_space = _content_sample_space(frequent, "noun")
         if avoid is not None:
-            noun_space = np.setdiff1d(noun_space, avoid)
+            noun_space = table_setdiff1d(noun_space, avoid)
         if allow_recursion:
-            poss = make_possessive(N_to_DP_mutate(choice(get_matches_of(noun, "arg_1", np.intersect1d(all_nominals, noun_space)))))
+            poss = make_possessive(N_to_DP_mutate(choice(get_matches_of(noun, "arg_1", table_intersect1d(all_nominals, noun_space)))))
         else:
-            poss = make_possessive(N_to_DP_mutate(choice(get_matches_of(noun, "arg_1", np.intersect1d(all_nouns, noun_space)))))
+            poss = make_possessive(N_to_DP_mutate(choice(get_matches_of(noun, "arg_1", table_intersect1d(all_nouns, noun_space)))))
         args["det"] = poss
         args["args"] = []
     if noun["category"] == "N/S":

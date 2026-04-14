@@ -104,6 +104,9 @@ class FilteredTable:
             return array.copy()
         return array
 
+    def __array_function__(self, func, types, args, kwargs):
+        return _table_array_function_dispatch(func, args, kwargs)
+
 
 class IndexedTable:
     def __init__(self, source, indices):
@@ -136,6 +139,9 @@ class IndexedTable:
         if copy:
             return array.copy()
         return array
+
+    def __array_function__(self, func, types, args, kwargs):
+        return _table_array_function_dispatch(func, args, kwargs)
 
 
 class ConcatTable:
@@ -200,6 +206,29 @@ class ConcatTable:
         if copy:
             return result.copy()
         return result
+
+    def __array_function__(self, func, types, args, kwargs):
+        return _table_array_function_dispatch(func, args, kwargs)
+
+
+def _table_array_function_dispatch(func, args, kwargs):
+    """Route numpy set operations on table objects to index-based implementations.
+
+    Called from __array_function__ on FilteredTable, IndexedTable, ConcatTable.
+    Returns NotImplemented for functions we don't handle so numpy falls back.
+    """
+    if func is np.intersect1d:
+        ar1, ar2 = args[0], args[1]
+        if kwargs.get("return_indices", False):
+            return NotImplemented
+        return table_intersect1d(ar1, ar2)
+    if func is np.union1d:
+        ar1, ar2 = args[0], args[1]
+        return table_union1d(ar1, ar2)
+    if func is np.setdiff1d:
+        ar1, ar2 = args[0], args[1]
+        return table_setdiff1d(ar1, ar2)
+    return NotImplemented
 
 
 def _warn_once(key, message):
