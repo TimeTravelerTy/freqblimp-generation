@@ -11,6 +11,8 @@ class LazyVocabSet:
         self._name = name
         self._builder = builder
         self._value = None
+        import utils.vocab_table as _vt
+        _vt._LAZY_REGISTRY.append(self)
 
     def resolve(self):
         if self._value is None:

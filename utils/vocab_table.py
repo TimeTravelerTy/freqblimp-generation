@@ -26,6 +26,7 @@ _TABLE_ROW_SIGNATURE_CACHE = {}
 _EXPRESSION_ZIPF_REGISTRY = None
 _EXPRESSION_ZIPF_REGISTRY_PATH = None
 _ROW_FREQUENCY_CACHE = {}
+_LAZY_REGISTRY = []  # LazyVocabSet instances that should be reset between paradigms
 
 # Max entries for caches that store large numpy array slices.
 # Prevents unbounded memory growth when many unique (row, label, table) combinations
@@ -48,6 +49,10 @@ def clear_query_caches():
     _OVERLAY_METADATA_REGISTRY_PATH = None
     _EXPRESSION_ZIPF_REGISTRY = None
     _EXPRESSION_ZIPF_REGISTRY_PATH = None
+    # Release cached vocab subsets held by LazyVocabSet instances so the large
+    # numpy arrays can be freed between paradigm runs.
+    for _lazy_set in _LAZY_REGISTRY:
+        _lazy_set._value = None
     gc.collect()
 
 
@@ -325,7 +330,8 @@ def _build_runtime_vocab():
         overlay_vocab = _load_vocab_csv(overlay_path)
         if len(overlay_vocab) > 0:
             overlay_vocab = _filter_overlay_acronym_nouns(overlay_vocab)
-            return np.concatenate([base_vocab, overlay_vocab]).astype(data_type)
+            # copy=False avoids an extra ~3.9 GB allocation when dtype already matches
+            return np.concatenate([base_vocab, overlay_vocab]).astype(data_type, copy=False)
     return base_vocab
 
 
@@ -333,8 +339,9 @@ def _filter_runtime_vocab(table):
     return table[table["OOV_inductive_biases"] != "1"]
 
 
-_RAW_RUNTIME_VOCAB = _build_runtime_vocab()
-vocab = _filter_runtime_vocab(_RAW_RUNTIME_VOCAB)
+# Build and filter in one expression so the unfiltered intermediate table is
+# not kept alive as a persistent module-level global (~3.9 GB with overlay).
+vocab = _filter_runtime_vocab(_build_runtime_vocab())
 
 # Lazy-loaded structures — only built on first access (avoids O(N) startup cost with large overlays)
 _OVERLAY_METADATA_REGISTRY = None
