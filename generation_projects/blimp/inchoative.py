@@ -16,7 +16,7 @@ class Generator(data_generator.BenchmarkGenerator):
                          lexically_identical=False)
 
         self.alternating_verbs = table_union1d(get_all("causative", "1"), get_all("inchoative", "1"))
-        self.non_alternating_transitives = get_all("inchoative", "0", all_transitive_verbs)
+        self.non_alternating_transitives = get_all("strict_trans", "1", get_all("inchoative", "0", all_transitive_verbs))
         self.all_singulars = get_all("sg", "1", all_nominals)
         self.all_plurals = get_all("sg", "0", all_nominals)
 
