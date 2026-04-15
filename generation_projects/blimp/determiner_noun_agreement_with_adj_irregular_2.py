@@ -1,7 +1,7 @@
 from utils import data_generator
 from utils.constituent_building import *
 from utils.conjugate import *
-from utils.randomize import choice
+from utils.randomize import choice, uniform_choice
 
 from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
 
@@ -28,7 +28,7 @@ class DetNGenerator(data_generator.BenchmarkGenerator):
 
         V1 = choice(filter_rows_for_active_zipf(all_transitive_verbs, "verb"))
         N1 = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V1, "arg_1", all_nouns), "noun")))
-        N2 = choice(get_matches_of(V1, "arg_2", self.all_irreg_pluralizable_nouns))
+        N2 = uniform_choice(get_matches_of(V1, "arg_2", self.all_irreg_pluralizable_nouns))
 
         Dem_match = choice(get_matched_by(N2, "arg_1", all_demonstratives))
         if Dem_match[0] == "this":
@@ -40,7 +40,7 @@ class DetNGenerator(data_generator.BenchmarkGenerator):
         elif Dem_match[0] == "those":
             Dem_mismatch = "that"
         V1 = conjugate(V1, N1)
-        adj = choice(filter_rows_for_active_zipf(get_matched_by(N2, "arg_1", all_adjectives), "adjective"))
+        adj = uniform_choice(filter_rows_for_active_zipf(get_matched_by(N2, "arg_1", all_adjectives), "adjective"))
 
         data = {
             "sentence_good": "%s %s %s %s %s." % (N1[0], V1[0], Dem_match[0], adj[0], N2[0]),

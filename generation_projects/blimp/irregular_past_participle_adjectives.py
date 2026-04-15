@@ -1,7 +1,7 @@
 from utils import data_generator
 from utils.constituent_building import *
 from utils.conjugate import *
-from utils.randomize import choice
+from utils.randomize import choice, uniform_choice
 from utils.vocab_sets import *
 
 from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
@@ -23,19 +23,15 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
         # The ate    pie was delicious
         # THE V_past N1 cop adj
 
-        candidates = filter_rows_for_active_zipf(self.all_trans_en_verbs, "verb", fallback_on_empty=False)
-        if len(candidates) == 0:
-            from utils.exceptions import LexicalGapError
-            raise LexicalGapError("No special_en_form transitive verbs in active Zipf range")
-        V_base = choice(candidates)
+        V_base = uniform_choice(self.all_trans_en_verbs)
         while (' ' in V_base[0]):
-            V_base = choice(candidates)
+            V_base = uniform_choice(self.all_trans_en_verbs)
         Verbs = get_all("root", V_base["root"])
         V_past = get_all("past", "1", Verbs)
         V_en = get_all("en", "1", Verbs)
-        N1 = choice(filter_rows_for_active_zipf(get_matches_of(V_base, "arg_2", all_common_nouns), "noun"))
+        N1 = uniform_choice(filter_rows_for_active_zipf(get_matches_of(V_base, "arg_2", all_common_nouns), "noun"))
         cop = return_copula(N1)
-        adj = choice(filter_rows_for_active_zipf(get_matched_by(N1, "arg_1", all_adjectives), "adjective"))
+        adj = uniform_choice(filter_rows_for_active_zipf(get_matched_by(N1, "arg_1", all_adjectives), "adjective"))
 
         data = {
             "sentence_good": "The %s %s %s %s." % (V_en[0][0], N1[0], cop[0], adj[0]),

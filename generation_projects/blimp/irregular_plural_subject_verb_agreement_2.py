@@ -1,7 +1,7 @@
 from utils import data_generator
 from utils.constituent_building import *
 from utils.conjugate import *
-from utils.randomize import choice
+from utils.randomize import choice, uniform_choice
 from functools import reduce
 from utils.vocab_sets import *
 
@@ -35,7 +35,7 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
         else:
             V1 = choice(filter_rows_for_active_zipf(np.intersect1d(self.safe_verbs, all_intransitive_verbs), "verb"))
             N2 = " "
-        N1_agree = choice(get_matches_of(V1, "arg_1", self.all_irreg_nouns))
+        N1_agree = uniform_choice(get_matches_of(V1, "arg_1", self.all_irreg_nouns))
         if N1_agree['sg'] == "1":
             N1_nonagree = N1_agree['pluralform']
         else:

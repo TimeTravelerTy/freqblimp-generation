@@ -1,7 +1,7 @@
 from utils import data_generator
 from utils.constituent_building import *
 from utils.conjugate import *
-from utils.randomize import choice
+from utils.randomize import choice, uniform_choice
 from utils.vocab_sets import *
 
 from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
@@ -24,23 +24,18 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
         # John eaten the pie
         # N1   V_en      N2
 
-        trans_candidates = filter_rows_for_active_zipf(self.all_trans_en_verbs, "verb", fallback_on_empty=False)
-        intrans_candidates = filter_rows_for_active_zipf(self.all_intrans_en_verbs, "verb", fallback_on_empty=False)
-        if len(trans_candidates) == 0 and len(intrans_candidates) == 0:
-            from utils.exceptions import LexicalGapError
-            raise LexicalGapError("No special_en_form verbs in active Zipf range")
-        use_trans = len(trans_candidates) > 0 and (len(intrans_candidates) == 0 or random.random() < 0.5)
-        if use_trans:
-            V_base = choice(trans_candidates)
-            N2 = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V_base, "arg_2", all_nouns), "noun")))
+        x = random.random()
+        if x < 1 / 2:
+            V_base = uniform_choice(self.all_trans_en_verbs)
+            N2 = N_to_DP_mutate(uniform_choice(filter_rows_for_active_zipf(get_matches_of(V_base, "arg_2", all_nouns), "noun")))
         else:
-            V_base = choice(intrans_candidates)
+            V_base = uniform_choice(self.all_intrans_en_verbs)
             N2 = " "
 
         Verbs = get_all("root", V_base["root"])
         V_past = get_all("past", "1", Verbs)
         V_en = get_all("en", "1", Verbs)
-        N1 = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V_base, "arg_1", all_nouns), "noun")))
+        N1 = N_to_DP_mutate(uniform_choice(filter_rows_for_active_zipf(get_matches_of(V_base, "arg_1", all_nouns), "noun")))
 
         data = {
             "sentence_good": "%s %s %s." % (N1[0], V_past[0][0], N2[0]),
