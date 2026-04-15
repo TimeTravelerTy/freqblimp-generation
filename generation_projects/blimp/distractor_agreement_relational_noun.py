@@ -1,7 +1,7 @@
 from utils import data_generator
 from utils.constituent_building import *
 from utils.conjugate import *
-from utils.randomize import choice
+from utils.randomize import choice, uniform_choice
 from utils.vocab_sets import *
 
 from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
@@ -27,7 +27,7 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
 
         S_arg = None
         while S_arg is None:
-            subj = choice(filter_rows_for_active_zipf(self.safe_subjs, "noun"))
+            subj = uniform_choice(self.safe_subjs)
             D = choice(get_matched_by(subj, "arg_1", all_very_common_dets))
             V_agree = choice(filter_rows_for_active_zipf(get_matched_by(subj, "arg_1", self.safe_verbs), "verb"))
             if V_agree["finite"] == "1":

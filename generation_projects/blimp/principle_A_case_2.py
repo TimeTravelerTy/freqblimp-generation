@@ -1,7 +1,7 @@
 from utils import data_generator
 from utils.constituent_building import *
 from utils.conjugate import *
-from utils.randomize import choice
+from utils.randomize import choice, uniform_choice
 from utils.vocab_sets import *
 
 from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
@@ -24,7 +24,7 @@ class BindingGenerator(data_generator.BenchmarkGenerator):
         # John imagines himself      saw           Mary
         # N1   V1       refl_match   Vembed_finite N2
 
-        special_verbs = choice(self.special_verbs)
+        special_verbs = uniform_choice(self.special_verbs)
         V1 = choice(get_all("root", special_verbs["root"]))
         N1 = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V1, "arg_1", self.all_safe_nouns), "noun")))
         Vembed_base = choice(filter_rows_for_active_zipf(get_matched_by(N1, "arg_1", all_transitive_verbs), "verb"))
