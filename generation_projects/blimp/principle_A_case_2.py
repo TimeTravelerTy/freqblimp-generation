@@ -25,7 +25,7 @@ class BindingGenerator(data_generator.BenchmarkGenerator):
         # N1   V1       refl_match   Vembed_finite N2
 
         special_verbs = uniform_choice(self.special_verbs)
-        V1 = choice(get_all("root", special_verbs["root"]))
+        V1 = uniform_choice(get_all("root", special_verbs["root"]))
         N1 = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V1, "arg_1", self.all_safe_nouns), "noun")))
         Vembed_base = choice(filter_rows_for_active_zipf(get_matched_by(N1, "arg_1", all_transitive_verbs), "verb"))
         Verb_embed = get_all("root", Vembed_base["root"])
