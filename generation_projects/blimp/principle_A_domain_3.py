@@ -1,7 +1,7 @@
 from utils import data_generator
 from utils.constituent_building import *
 from utils.conjugate import *
-from utils.randomize import choice
+from utils.randomize import choice, uniform_choice
 from utils.vocab_sets import *
 
 from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
@@ -26,8 +26,8 @@ class BindingGenerator(data_generator.BenchmarkGenerator):
         # Mary thinks  John saw     herself.
         # N2   V1      N1   Vembed  refl_match
 
-        V1 = choice(filter_rows_for_active_zipf(self.all_sing_embedding_verbs, "verb"))
-        Vembed = choice(self.all_sing_refl_preds)
+        V1 = uniform_choice(self.all_sing_embedding_verbs)
+        Vembed = uniform_choice(self.all_sing_refl_preds)
         N1 = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V1, "arg_1", self.all_safe_gendered_nouns), "noun")))
         refl_mismatch = choice(get_matched_by(N1, "arg_1", all_reflexives))
         N2 = choice(filter_rows_for_active_zipf(get_matches_of(Vembed, "arg_1", self.all_safe_gendered_nouns), "noun"))

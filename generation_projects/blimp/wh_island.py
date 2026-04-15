@@ -1,7 +1,7 @@
 from utils import data_generator
 from utils.constituent_building import *
 from utils.conjugate import *
-from utils.randomize import choice
+from utils.randomize import choice, uniform_choice
 
 from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
 
@@ -24,7 +24,7 @@ class Generator(data_generator.BenchmarkGenerator):
         # What do      you  know  who had     bought?
         # Wh1  Aux_mat Subj V_mat Wh2 Aux_emb V_emb
 
-        V_mat = choice(filter_rows_for_active_zipf(self.responsive_verbs, "verb"))
+        V_mat = uniform_choice(self.responsive_verbs)
         Subj = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V_mat, "arg_1", all_nouns), "noun")))
         Aux_mat = return_aux(V_mat, Subj)
         V_emb = choice(filter_rows_for_active_zipf(all_transitive_verbs, "verb"))
