@@ -23,9 +23,13 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
         # The ate    pie was delicious
         # THE V_past N1 cop adj
 
-        V_base = choice(self.all_trans_en_verbs)
+        candidates = filter_rows_for_active_zipf(self.all_trans_en_verbs, "verb", fallback_on_empty=False)
+        if len(candidates) == 0:
+            from utils.exceptions import LexicalGapError
+            raise LexicalGapError("No special_en_form transitive verbs in active Zipf range")
+        V_base = choice(candidates)
         while (' ' in V_base[0]):
-            V_base = choice(self.all_trans_en_verbs)
+            V_base = choice(candidates)
         Verbs = get_all("root", V_base["root"])
         V_past = get_all("past", "1", Verbs)
         V_en = get_all("en", "1", Verbs)

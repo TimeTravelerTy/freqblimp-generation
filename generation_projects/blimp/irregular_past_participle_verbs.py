@@ -24,12 +24,17 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
         # John eaten the pie
         # N1   V_en      N2
 
-        x = random.random()
-        if x < 1 / 2:
-            V_base = choice(self.all_trans_en_verbs)
+        trans_candidates = filter_rows_for_active_zipf(self.all_trans_en_verbs, "verb", fallback_on_empty=False)
+        intrans_candidates = filter_rows_for_active_zipf(self.all_intrans_en_verbs, "verb", fallback_on_empty=False)
+        if len(trans_candidates) == 0 and len(intrans_candidates) == 0:
+            from utils.exceptions import LexicalGapError
+            raise LexicalGapError("No special_en_form verbs in active Zipf range")
+        use_trans = len(trans_candidates) > 0 and (len(intrans_candidates) == 0 or random.random() < 0.5)
+        if use_trans:
+            V_base = choice(trans_candidates)
             N2 = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V_base, "arg_2", all_nouns), "noun")))
         else:
-            V_base = choice(self.all_intrans_en_verbs)
+            V_base = choice(intrans_candidates)
             N2 = " "
 
         Verbs = get_all("root", V_base["root"])

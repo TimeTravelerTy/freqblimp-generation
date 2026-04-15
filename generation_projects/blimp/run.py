@@ -71,6 +71,7 @@ def _runtime_config_from_args(args):
         "record_trace": not args.no_trace,
         "show_progress": not args.no_progress and args.jobs == 1,
         "continue_on_error": args.continue_on_error,
+        "skip_existing": args.skip_existing,
         "jobs": args.jobs,
     }
 
@@ -141,6 +142,14 @@ def _run_uid(uid, config):
     configure_sampling_policy(_policy_from_config(config))
     generator = _build_generator(module)
     if config["output_path"]:
+        if config.get("skip_existing") and os.path.exists(config["output_path"]) and os.path.getsize(config["output_path"]) > 0:
+            print("[skip-existing] %s: %s (%d bytes)" % (uid, config["output_path"], os.path.getsize(config["output_path"])))
+            return {
+                "uid": uid,
+                "status": "skipped",
+                "duration_seconds": round(time.time() - started, 3),
+                "output_path": config["output_path"],
+            }
         generator.generate_paradigm(number_to_generate=config["number_to_generate"], absolute_path=config["output_path"])
         return {
             "uid": uid,
@@ -151,6 +160,14 @@ def _run_uid(uid, config):
     output_dir = Path(config["output_dir"])
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = str(output_dir / ("%s.jsonl" % generator.uid))
+    if config.get("skip_existing") and os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+        print("[skip-existing] %s: %s (%d bytes)" % (uid, output_path, os.path.getsize(output_path)))
+        return {
+            "uid": uid,
+            "status": "skipped",
+            "duration_seconds": round(time.time() - started, 3),
+            "output_path": output_path,
+        }
     generator.generate_paradigm(
         number_to_generate=config["number_to_generate"],
         absolute_path=output_path,
@@ -247,6 +264,8 @@ def build_parser():
     parser.add_argument("--no-trace", action="store_true")
     parser.add_argument("--no-progress", action="store_true")
     parser.add_argument("--continue-on-error", action="store_true")
+    parser.add_argument("--skip-existing", action="store_true",
+                        help="Skip paradigms whose output file already exists and is non-empty.")
     return parser
 
 
