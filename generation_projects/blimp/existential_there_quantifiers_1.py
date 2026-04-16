@@ -4,7 +4,10 @@ from utils.conjugate import *
 from utils.randomize import choice
 from functools import reduce
 
-from generation_projects.blimp.overlay_guards import filter_nouns_for_requirement
+from generation_projects.blimp.overlay_guards import (
+    filter_nouns_for_requirement,
+    filter_plural_looking_singular_nouns,
+)
 
 class Generator(data_generator.BenchmarkGenerator):
     def __init__(self):
@@ -25,7 +28,7 @@ class Generator(data_generator.BenchmarkGenerator):
         self.good_quantifiers_pl = reduce(np.union1d, [get_all("expression", s, all_determiners) for s in good_quantifiers_pl_str])
         self.bad_quantifiers = reduce(np.union1d, [get_all("expression", s, all_determiners) for s in bad_quantifiers_str])
         bad_subjs = reduce(np.union1d, (all_relational_poss_nouns, all_proper_names, get_all("category", "NP")))
-        self.safe_subjs = np.setdiff1d(all_nominals, bad_subjs)
+        self.safe_subjs = filter_plural_looking_singular_nouns(np.setdiff1d(all_nominals, bad_subjs))
 
     def sample(self):
         # There is  a       monster eating children.

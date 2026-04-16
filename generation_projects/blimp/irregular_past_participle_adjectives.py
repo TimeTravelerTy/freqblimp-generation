@@ -15,7 +15,18 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
                          one_prefix_method=False,
                          two_prefix_method=True,
                          lexically_identical=False)
-        self.all_trans_en_verbs = get_all("special_en_form", "1", all_transitive_verbs)
+        candidates = get_all("special_en_form", "1", all_transitive_verbs)
+        safe_candidates = []
+        for row in candidates:
+            if " " in str(row["expression"]):
+                continue
+            verb_family = get_all("root", row["root"])
+            if len(get_all("past", "1", verb_family)) == 0:
+                continue
+            if len(get_all("en", "1", verb_family)) == 0:
+                continue
+            safe_candidates.append(row)
+        self.all_trans_en_verbs = np.array(safe_candidates, dtype=candidates.dtype) if safe_candidates else candidates
 
     def sample(self):
         # The eaten pie was delicious
@@ -24,8 +35,6 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
         # THE V_past N1 cop adj
 
         V_base = uniform_choice(self.all_trans_en_verbs)
-        while (' ' in V_base[0]):
-            V_base = uniform_choice(self.all_trans_en_verbs)
         Verbs = get_all("root", V_base["root"])
         V_past = get_all("past", "1", Verbs)
         V_en = get_all("en", "1", Verbs)

@@ -5,7 +5,13 @@ logs/
 outputs/overlay_qc*
 outputs/inductive_biases
 outputs/tsubame_runs
+outputs/fix_smoke*/
+outputs/tmp_audit/
+outputs/qc_*/
 .idea/
+# runtime vocab caches (auto-rebuilt, never commit)
+vocabulary.csv.runtime.compact.v2.npy
+vocabulary_overlay.csv.runtime.compact.v2.npy
 View_Vocab.xlsx
 *.pyc
 vocabulary_my_edits.csv

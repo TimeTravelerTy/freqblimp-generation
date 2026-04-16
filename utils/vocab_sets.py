@@ -62,7 +62,7 @@ def _resolve_lazy(value):
 
 
 # NOUNS
-all_nouns = _lazy("all_nouns", lambda: get_all("category", "N"))
+all_nouns = _lazy("all_nouns", lambda: table_setdiff1d(get_all("category", "N"), get_all("locale", "1")))
 all_singular_nouns = _lazy("all_singular_nouns", lambda: get_all("sg", "1", all_nouns))
 all_singular_count_nouns = _lazy("all_singular_count_nouns", lambda: get_all("mass", "0", all_singular_nouns))
 all_animate_nouns = _lazy("all_animate_nouns", lambda: get_all("animate", "1", all_nouns))
@@ -81,9 +81,12 @@ all_plural_animate_nouns = _lazy(
     "all_plural_animate_nouns",
     lambda: table_intersect1d(all_animate_nouns, all_plural_nouns),
 )
-all_common_nouns = _lazy("all_common_nouns", lambda: get_all_conjunctive([("category", "N"), ("properNoun", "0")]))
+all_common_nouns = _lazy(
+    "all_common_nouns",
+    lambda: table_setdiff1d(get_all_conjunctive([("category", "N"), ("properNoun", "0")]), get_all("locale", "1")),
+)
 all_relational_nouns = _lazy("all_relational_nouns", lambda: get_all("category", "N/NP"))
-all_nominals = _lazy("all_nominals", lambda: get_all("noun", "1"))
+all_nominals = _lazy("all_nominals", lambda: table_setdiff1d(get_all("noun", "1"), get_all("locale", "1")))
 all_relational_poss_nouns = _lazy("all_relational_poss_nouns", lambda: get_all("category", "N\\NP[poss]"))
 all_proper_names = _lazy("all_proper_names", lambda: get_all("properNoun", "1"))
 

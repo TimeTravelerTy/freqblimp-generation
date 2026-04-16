@@ -128,15 +128,25 @@ def _without_avoid(candidates, avoid):
     return np.setdiff1d(candidates, avoid)
 
 
+def _copy_structured_row_if_needed(value):
+    names = getattr(getattr(value, "dtype", None), "names", None)
+    if not names:
+        return value
+    try:
+        return value.copy()
+    except Exception:
+        return value
+
+
 def uniform_choice(set, avoid=None):
     candidates = _without_avoid(set, avoid)
     if len(candidates) == 0:
         raise LexicalGapError("No candidates available for uniform sampling")
     try:
-        return candidates[_RNG.randrange(len(candidates))]
+        return _copy_structured_row_if_needed(candidates[_RNG.randrange(len(candidates))])
     except (TypeError, KeyError, IndexError):
         pass
-    return _RNG.choice(tuple(candidates))
+    return _copy_structured_row_if_needed(_RNG.choice(tuple(candidates)))
 
 
 def _is_structured_rows(candidates):
@@ -243,4 +253,4 @@ def choice(set, avoid=None):
     row, zipf_value = _weighted_choice(policy_candidates, eligible_indices, eligible_zipf, policy)
     frequency = {"zipf_expression": zipf_value}
     _record_trace(row, frequency, controlled_pos, len(candidates), len(eligible_indices), policy)
-    return row
+    return _copy_structured_row_if_needed(row)

@@ -7,6 +7,9 @@ from functools import reduce
 from generation_projects.blimp.overlay_guards import (
     control_subject_verb_rows,
     control_subject_adjective_rows,
+    curated_template_expressions,
+    existential_bad_control_subject_verb_rows,
+    filter_plural_looking_singular_nouns,
     overlay_enabled,
     subject_raising_verb_rows,
     subject_raising_adjective_rows,
@@ -26,14 +29,17 @@ class Generator(data_generator.BenchmarkGenerator):
         self.good_quantifiers_sg = reduce(np.union1d, [get_all("expression", s, all_determiners) for s in good_quantifiers_sg_str])
         self.good_quantifiers_pl = reduce(np.union1d, [get_all("expression", s, all_determiners) for s in good_quantifiers_pl_str])
         bad_emb_subjs = reduce(np.union1d, (all_relational_poss_nouns, all_proper_names, get_all("category", "NP")))
-        self.safe_emb_subjs = np.setdiff1d(all_nominals, bad_emb_subjs)
+        self.safe_emb_subjs = filter_plural_looking_singular_nouns(np.setdiff1d(all_nominals, bad_emb_subjs))
         self.raising_verbs = subject_raising_verb_rows()
-        self.control_verbs = np.setdiff1d(control_subject_verb_rows(), get_all("root", "fail_(S\\NP)/(S[to]\\N)"))
+        curated_control_verbs = existential_bad_control_subject_verb_rows()
+        if len(curated_control_verbs) > 0:
+            self.control_verbs = curated_control_verbs
+        else:
+            self.control_verbs = np.setdiff1d(control_subject_verb_rows(), get_all("root", "fail_(S\\NP)/(S[to]\\N)"))
         self.raising_pred_rows = subject_raising_adjective_rows()
         self.control_pred_rows = control_subject_adjective_rows()
-        self.raising_preds = ["about", "apt", "bound", "certain", "likely", "soon", "sure", "unlikely"]
-        self.control_preds = ["able", "anxious", "eager", "excited", "happy", "overjoyed", "pleased", "ready",
-                              "reluctant", "unable", "unhappy", "unwilling", "willing"]
+        self.raising_preds = tuple(curated_template_expressions("Adj_raising_subj"))
+        self.control_preds = tuple(curated_template_expressions("Adj_control_subj"))
 
     def sample(self):
         # There does seem    to be a dog      eating an apple.

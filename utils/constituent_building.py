@@ -22,6 +22,8 @@ except Exception:
                 return word
             if word.endswith("ies") and len(word) > 3:
                 return word[:-3] + "y"
+            if word.endswith("ied") and len(word) > 4:
+                return word[:-3] + "y"
             if word.endswith("ing") and len(word) > 4:
                 stem = word[:-3]
                 if len(stem) >= 2 and stem[-1] == stem[-2]:
@@ -36,7 +38,9 @@ except Exception:
                 return stem
             if word.endswith("s") and len(word) > 3:
                 if word.endswith("es") and len(word) > 4:
-                    return word[:-2]
+                    if word.endswith(("ches", "shes", "sses", "zzes", "xes", "oes")):
+                        return word[:-2]
+                    return word[:-1]
                 return word[:-1]
             return word
 
@@ -259,7 +263,7 @@ def make_sentence(frequent=True, allow_recursion=False):
     :param frequent: should only frequent vocab be generated?
     :return: a vocab entry with the expression containing the string of the full sentence
     """
-    verb = choice(all_verbs)
+    verb = choice(all_verbs).copy()
     verb[0] = make_sentence_from_verb(verb, frequent=frequent, allow_recursion=allow_recursion)
     return verb
 
@@ -280,7 +284,7 @@ def make_emb_subj_question(frequent=True):
     :param frequent: should only frequent vocab be generated?
     :return: a vocab entry with the expression corresponding to the string of an entire embedded question with a wh-subject
     """
-    verb = choice(all_possibly_singular_verbs)
+    verb = choice(all_possibly_singular_verbs).copy()
     args = verb_args_from_verb(verb)
     wh = choice(get_matched_by(args["subj"], "arg_1", all_wh_words))
     args["subj"] = wh
@@ -340,6 +344,7 @@ def N_to_DP_mutate(noun, frequent=True, determiner=True, allow_quantifiers=True,
     :param frequent: restrict to frequent determiners only?
     :return: NONE. mutates string of noun.
     """
+    noun = noun.copy()
     args = noun_args_from_noun(noun, frequent, allow_quantifiers=allow_quantifiers, avoid=avoid)
     if determiner and args["det"] is not []:
         noun[0] = " ".join([args["det"][0],
@@ -387,6 +392,7 @@ def make_possessive(DP):
     :param DP: a vocab entry for a full DP (expression of type e)
     :return: the DP with expression containing the string with 's appended
     """
+    DP = DP.copy()
     poss_str = "'" if DP["pl"] == "1" and DP[0][-1] == "s" else "'s"
     DP[0] = DP[0] + poss_str
     return DP
@@ -407,6 +413,11 @@ def get_bare_form(verb):
     :param verb: the vocab entry of a verb
     :return: the vocab entry of the bare form of the verb
     """
+    root = str(verb["root"]).strip()
+    if root:
+        bare_matches = get_all_conjunctive([("root", root), ("bare", "1")], all_verbs)
+        if len(bare_matches) > 0:
+            return bare_matches[0].copy()
     bare_verb = verb.copy()
     bare_verb["expression"] = get_bare_form_str(verb["expression"])
     bare_verb["finite"] = "0"
@@ -598,6 +609,7 @@ def get_same_V_form(root, verb_to_match):
         raise NonUniqueError("More than one verb with root %s matching form of %s" % (root, str(verb_to_match)))
 
 def build_locative(locale, allow_quantifiers=True, avoid=None, bind_det=False):
+    locale = locale.copy()
     if bind_det:
         locale[0] = "%s " + locale[0]
     else:

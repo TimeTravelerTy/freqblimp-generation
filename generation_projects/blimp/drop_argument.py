@@ -3,7 +3,10 @@ from utils.constituent_building import *
 from utils.conjugate import *
 from utils.randomize import choice
 
-from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+from generation_projects.blimp.overlay_guards import (
+    drop_argument_good_verb_rows,
+    filter_rows_for_active_zipf,
+)
 
 class CSCGenerator(data_generator.BenchmarkGenerator):
     def __init__(self):
@@ -16,7 +19,7 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
                          lexically_identical=False)
 
         self.strict_transitive = get_all("strict_trans", "1", all_transitive_verbs)
-        self.drop_arg_transitive = get_all("strict_trans", "0", all_transitive_verbs)
+        self.drop_arg_transitive = drop_argument_good_verb_rows()
 
     def sample(self):
         # The bear has attacked.

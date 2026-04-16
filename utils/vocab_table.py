@@ -36,6 +36,41 @@ _LAZY_REGISTRY = []  # LazyVocabSet instances that should be reset between parad
 _RESULT_CACHE_MAX = 256
 _WARNED_MESSAGES = set()
 _HIGH_CARDINALITY_EXACT_MATCH_LABELS = frozenset({"expression", "root", "singularform", "pluralform"})
+_RUNTIME_COMPACT_CACHE_VERSION = "v2"
+_EXCLUDED_OVERLAY_NOUN_EXPRESSIONS = frozenset({
+    "chang",
+    "qaeda",
+})
+
+
+def _normalize_expression_key(value):
+    return re.sub(r"\s+", " ", str(value or "").strip().lower())
+
+
+def _expression_named_entity_variants(expression):
+    variants = {_normalize_expression_key(expression)}
+    expr = next(iter(variants))
+    if " " not in expr:
+        if expr.endswith("ies") and len(expr) > 3:
+            variants.add(expr[:-3] + "y")
+        if expr.endswith("s") and len(expr) > 3:
+            variants.add(expr[:-1])
+    return variants
+
+
+@lru_cache(maxsize=1)
+def _base_named_entity_expressions():
+    expressions = set()
+    if not os.path.exists(BASE_VOCAB_PATH):
+        return frozenset()
+    with open(BASE_VOCAB_PATH, newline="") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            if row.get("properNoun") == "1" or row.get("locale") == "1":
+                expression = _normalize_expression_key(row.get("expression", ""))
+                if expression:
+                    expressions.add(expression)
+    return frozenset(expressions)
 
 
 def _acronym_like_mask(noun_values, expressions):
@@ -48,6 +83,53 @@ def _acronym_like_mask(noun_values, expressions):
     for v in "aeiouAEIOU":
         has_vowel |= np.char.find(expressions, v) >= 0
     return is_noun & ~has_vowel
+
+
+def _overlay_common_noun_noise_mask(noun_values, expressions, proper_values=None, locale_values=None):
+    noun_values = np.asarray(noun_values)
+    expressions = np.asarray(expressions, dtype=str)
+    is_noun = noun_values == "1"
+    if not np.any(is_noun):
+        return np.zeros(len(noun_values), dtype=bool)
+    proper_values = np.asarray(proper_values if proper_values is not None else np.repeat("", len(noun_values)), dtype=str)
+    locale_values = np.asarray(locale_values if locale_values is not None else np.repeat("", len(noun_values)), dtype=str)
+    normalized = np.char.lower(np.char.strip(expressions))
+    one_token = np.char.find(normalized, " ") < 0
+    short_alpha = one_token & np.char.isalpha(normalized) & (np.char.str_len(normalized) <= 3)
+    explicit_blocklist = np.isin(normalized, list(_EXCLUDED_OVERLAY_NOUN_EXPRESSIONS))
+    same_as_named_entity = np.zeros(len(noun_values), dtype=bool)
+    noun_indices = np.flatnonzero(is_noun)
+    named_entities = _base_named_entity_expressions()
+    if named_entities:
+        noun_exprs = normalized[noun_indices].tolist()
+        same_as_named_entity[noun_indices] = np.fromiter(
+            (bool(_expression_named_entity_variants(expr) & named_entities) for expr in noun_exprs),
+            dtype=bool,
+            count=len(noun_indices),
+        )
+    is_locale_or_proper = (proper_values == "1") | (locale_values == "1")
+    return is_noun & (short_alpha | explicit_blocklist | same_as_named_entity | is_locale_or_proper)
+
+
+def _overlay_row_allowed(values, field_positions):
+    if values[field_positions["noun"]] != "1":
+        return True
+    expression = _normalize_expression_key(values[field_positions["expression"]])
+    if not expression:
+        return False
+    if values[field_positions.get("properNoun", -1)] == "1":
+        return False
+    if values[field_positions.get("locale", -1)] == "1":
+        return False
+    if expression in _EXCLUDED_OVERLAY_NOUN_EXPRESSIONS:
+        return False
+    if " " not in expression and expression.isalpha() and len(expression) <= 3:
+        return False
+    if _expression_named_entity_variants(expression) & _base_named_entity_expressions():
+        return False
+    if not any(ch in "aeiou" for ch in expression):
+        return False
+    return True
 
 
 class FilteredTable:
@@ -64,7 +146,12 @@ class FilteredTable:
         if self._keep_mask is None:
             keep = np.asarray(self.source["OOV_inductive_biases"] != "1", dtype=bool)
             if self.exclude_acronym_nouns:
-                keep &= ~_acronym_like_mask(self.source["noun"], self.source["expression"])
+                keep &= ~_overlay_common_noun_noise_mask(
+                    self.source["noun"],
+                    self.source["expression"],
+                    proper_values=self.source["properNoun"],
+                    locale_values=self.source["locale"],
+                )
             self._keep_mask = keep
         return self._keep_mask
 
@@ -386,7 +473,7 @@ def _load_vocab_csv(path, mmap_mode=None):
 def _load_vocab_csv_runtime(path, mmap_mode=None, exclude_acronym_nouns=False):
     if not path or not os.path.exists(path):
         return np.array([], dtype=data_type)
-    compact_cache = path + ".runtime.compact.npy"
+    compact_cache = path + ".runtime.compact.%s.npy" % _RUNTIME_COMPACT_CACHE_VERSION
     if os.path.exists(compact_cache) and os.path.getmtime(compact_cache) >= os.path.getmtime(path):
         try:
             table = np.load(compact_cache, allow_pickle=False, mmap_mode=mmap_mode)
@@ -424,10 +511,8 @@ def _load_vocab_csv_runtime(path, mmap_mode=None, exclude_acronym_nouns=False):
 def _row_allowed(values, field_positions, exclude_acronym_nouns=False):
     if values[field_positions["OOV_inductive_biases"]] == "1":
         return False
-    if exclude_acronym_nouns and values[field_positions["noun"]] == "1":
-        expression = values[field_positions["expression"]]
-        if expression and not any(ch in "aeiouAEIOU" for ch in expression):
-            return False
+    if exclude_acronym_nouns and not _overlay_row_allowed(values, field_positions):
+        return False
     return True
 
 

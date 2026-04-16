@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Iterable, Optional, Sequence
 
 import numpy as np
@@ -30,16 +31,20 @@ _OBJECT_RAISING_VERBS = (
 )
 
 _RAISING_ADJECTIVES = (
+    # core modal/dispositional
     "likely", "unlikely", "sure", "certain", "supposed", "going", "bound", "apt",
-    "liable", "set", "due", "prone", "fated", "destined", "doomed", "slated",
-    "scheduled", "wont", "calculated", "rumored", "reputed", "alleged", "poised",
-    "expected", "anticipated", "predicted", "estimated", "projected", "forecast",
-    "reported", "believed", "thought", "assumed", "known", "understood", "claimed",
-    "presumed", "suspected", "deemed", "said", "acknowledged", "recognized",
-    "accepted", "conceded", "noted", "asserted", "inferred", "deduced",
-    "established", "demonstrated", "posited", "postulated", "hypothesized",
-    "proposed", "required", "needed", "mandated", "stipulated", "specified",
-    "feared", "hoped", "soon", "about",
+    "liable", "set", "due", "prone", "wont",
+    # fate/disposition
+    "fated", "destined", "doomed", "slated", "scheduled", "poised", "calculated",
+    # canonical epistemic passives (unambiguous subject-raising reading)
+    "rumored", "reputed", "alleged", "expected", "anticipated", "predicted",
+    "estimated", "projected", "forecast", "reported", "believed", "thought",
+    "assumed", "known", "understood", "claimed", "presumed", "suspected", "deemed",
+    "said", "acknowledged", "recognized", "accepted", "conceded", "noted",
+    "asserted", "established", "demonstrated",
+    # excluded: deontic (required, needed, mandated, stipulated, specified),
+    # attitudinal (feared, hoped), and marginal hypothetical/inferential
+    # (hypothesized, posited, postulated, proposed, inferred, deduced)
 )
 
 _CONTROL_ADJECTIVES = (
@@ -68,6 +73,38 @@ _TOUGH_ADJECTIVES = (
     "hazardous", "treacherous", "perilous", "formidable", "loathsome", "repulsive",
     "irksome", "wearisome", "cumbersome", "unsettling", "unnerving", "disarming",
     "invigorating", "uplifting", "edifying", "fruitless", "futile",
+)
+
+_EXISTENTIAL_CONTROL_SUBJECT_EXCLUDED_VERBS = (
+    "continue", "fail", "need",
+)
+
+_DROP_ARGUMENT_GOOD_VERBS = (
+    # original core list
+    "aid", "approach", "ascend", "attack", "buy", "clean", "climb down",
+    "climb up", "descend", "exit", "explore", "forget", "harm", "help",
+    "hinder", "investigate", "know", "leave", "love", "observe", "pass",
+    "purchase", "remember", "run around", "see", "sell", "skate around",
+    "tour", "visit", "watch",
+    # high-frequency absolute-use verbs added to base vocab (strict_trans → 0)
+    "draw", "drink", "eat", "grow", "ride", "sing", "teach", "write",
+    # additional verbs confirmed in overlay vocabulary with strict_trans=0
+    # investigation / analysis
+    "analyse", "analyze", "annotate", "assess", "audit", "calibrate",
+    "classify", "configure", "debug", "diagnose", "document", "evaluate",
+    "inspect", "monitor", "proofread", "register", "scrutinize", "sort",
+    "track", "transcribe",
+    # cleaning / maintenance
+    "buff", "disinfect", "insulate", "lubricate", "polish", "scrub",
+    "shellac", "sterilize", "trim",
+    # agriculture / horticulture
+    "cultivate", "plant", "reap", "weed",
+    # crafts / trade / provisioning
+    "garnish", "hoard", "marinate", "peddle", "pluck", "procure",
+    "salvage", "scavenge", "season", "stockpile",
+    # administration / services
+    "advertise", "allocate", "counsel", "educate", "excavate", "import",
+    "instruct", "post", "prepare", "quarry", "supervise", "treat",
 )
 
 COUNT_TRIGGERS = {
@@ -177,6 +214,50 @@ def filter_rows_for_active_zipf(table, controlled_pos: str, fallback_on_empty: b
     return table
 
 
+def _rows_for_expression_families(table, expressions: Sequence[str]):
+    families = []
+    for expression in expressions:
+        exact = get_all("expression", expression, table)
+        if len(exact) == 0:
+            continue
+        families.append(np.asarray(exact))
+        roots = {
+            str(row["root"]).strip()
+            for row in exact
+            if str(row["root"]).strip()
+        }
+        for root in roots:
+            family = get_all("root", root, table)
+            if len(family) > 0:
+                families.append(np.asarray(family))
+    if not families:
+        return np.array([], dtype=getattr(table, "dtype", None))
+    merged = families[0]
+    for family in families[1:]:
+        merged = np.union1d(merged, family)
+    return merged
+
+
+def _exclude_expression_families(table, expressions: Sequence[str]):
+    if len(table) == 0:
+        return table
+    normalized_expressions = {str(expression).strip() for expression in expressions if str(expression).strip()}
+    excluded_roots = set()
+    for expression in normalized_expressions:
+        exact = get_all("expression", expression, table)
+        for row in exact:
+            root = str(row["root"]).strip()
+            if root:
+                excluded_roots.add(root)
+    keep_mask = np.ones(len(table), dtype=bool)
+    if normalized_expressions:
+        keep_mask &= ~np.isin(np.asarray(table["expression"], dtype=str), list(normalized_expressions))
+    if excluded_roots:
+        keep_mask &= ~np.isin(np.asarray(table["root"], dtype=str), list(excluded_roots))
+    filtered = table[keep_mask]
+    return filtered if len(filtered) > 0 else table
+
+
 def raising_verb_list_for_uid(uid: str) -> Sequence[str]:
     uid = str(uid or "").strip().lower()
     if "object_raising" in uid:
@@ -213,7 +294,13 @@ def control_object_verb_rows():
 
 
 def subject_raising_adjective_rows():
-    return adjective_rows_for_category("Adj_raising_subj")
+    """Return only the canonical subject-raising adjectives.
+
+    Filters vocabulary rows by _RAISING_ADJECTIVES so that the curated list
+    is the single source of truth for both generators and the overlay pipeline.
+    """
+    rows = adjective_rows_for_category("Adj_raising_subj")
+    return _rows_for_expression_families(rows, _RAISING_ADJECTIVES)
 
 
 def control_subject_adjective_rows():
@@ -227,6 +314,15 @@ def tough_adjective_rows():
 def clausal_it_adjective_rows():
     rows = adjective_rows_for_category("Adj_clausal")
     return rows[rows["arg_1"] == "expression=it"]
+
+
+def existential_bad_control_subject_verb_rows():
+    rows = control_subject_verb_rows()
+    return _exclude_expression_families(rows, _EXISTENTIAL_CONTROL_SUBJECT_EXCLUDED_VERBS)
+
+
+def drop_argument_good_verb_rows():
+    return _rows_for_expression_families(get_all("strict_trans", "0"), _DROP_ARGUMENT_GOOD_VERBS)
 
 
 def requirement_from_text(*parts: Iterable[object]) -> Optional[str]:
@@ -253,6 +349,35 @@ def filter_nouns_for_requirement(table, req: Optional[str]):
     if req == "MASS":
         return get_all("mass", "1", table)
     return table
+
+
+@lru_cache(maxsize=4096)
+def noun_expression_looks_plural(expression: str) -> bool:
+    text = str(expression or "").strip().lower()
+    if not text or " " in text:
+        return False
+    try:
+        from lemminflect import getLemma
+    except Exception:
+        return False
+    lemmas = tuple(str(lemma).strip().lower() for lemma in (getLemma(text, upos="NOUN") or ()))
+    if not lemmas:
+        return False
+    return all(lemma and lemma != text for lemma in lemmas)
+
+
+def filter_plural_looking_singular_nouns(table):
+    if len(table) == 0:
+        return table
+    expr = np.asarray(table["expression"], dtype=str)
+    sg = np.asarray(table["sg"], dtype=str)
+    suspicious = (sg == "1") & np.fromiter(
+        (noun_expression_looks_plural(expression) for expression in expr),
+        dtype=bool,
+        count=len(expr),
+    )
+    filtered = table[~suspicious]
+    return filtered if len(filtered) > 0 else table
 
 
 def number_to_words(value: int) -> str:
