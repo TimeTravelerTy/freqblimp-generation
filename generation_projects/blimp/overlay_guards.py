@@ -5,7 +5,7 @@ from typing import Iterable, Optional, Sequence
 import numpy as np
 
 from utils.randomize import get_active_policy
-from utils.vocab_table import get_all, get_table_zipf_expression
+from utils.vocab_table import get_all, get_table_zipf_expression, table_union1d
 
 
 _SUBJECT_RAISING_VERBS = (
@@ -105,6 +105,26 @@ _DROP_ARGUMENT_GOOD_VERBS = (
     # administration / services
     "advertise", "allocate", "counsel", "educate", "excavate", "import",
     "instruct", "post", "prepare", "quarry", "supervise", "treat",
+)
+
+_CAUSATIVE_ALTERNATING_VERBS = (
+    # thermal / phase change
+    "bake", "burn", "char", "condense", "evaporate", "freeze", "liquefy",
+    "melt", "scorch", "soak", "solidify", "vaporize", "wash",
+    # mechanical / structural change
+    "chip", "crack", "crumple", "fade", "flatten", "fold", "fray", "loosen",
+    "shatter", "shrink", "stretch", "tighten", "twist", "unfold", "warp", "wrinkle",
+    # color / luminance change
+    "blacken", "brighten", "darken", "dim",
+    # motion / position change
+    "close", "drop", "fling open", "hide", "hide away", "move", "open", "roll",
+    "shut", "sit down", "slow", "speed up", "spin around", "stand up", "stop",
+    "tip over", "turn", "wake up",
+    # social / process change
+    "accelerate", "assemble", "awaken", "change", "crash", "dry", "grow",
+    "maneuver", "marry", "reunite", "steer", "train",
+    # other
+    "benefit", "worry",
 )
 
 COUNT_TRIGGERS = {
@@ -323,6 +343,17 @@ def existential_bad_control_subject_verb_rows():
 
 def drop_argument_good_verb_rows():
     return _rows_for_expression_families(get_all("strict_trans", "0"), _DROP_ARGUMENT_GOOD_VERBS)
+
+
+def causative_alternating_verb_rows():
+    """Return only genuine causative-alternating verb rows (TV and IV forms).
+
+    Filters both causative=1 and inchoative=1 rows through _CAUSATIVE_ALTERNATING_VERBS,
+    excluding overlay verbs that incorrectly inherit causative/inchoative flags from
+    unrelated base verbs (e.g. protrude inheriting from accelerate).
+    """
+    all_rows = table_union1d(get_all("causative", "1"), get_all("inchoative", "1"))
+    return _rows_for_expression_families(all_rows, _CAUSATIVE_ALTERNATING_VERBS)
 
 
 def requirement_from_text(*parts: Iterable[object]) -> Optional[str]:

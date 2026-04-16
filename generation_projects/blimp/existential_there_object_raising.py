@@ -1,7 +1,7 @@
 from utils import data_generator
 from utils.constituent_building import *
 from utils.conjugate import *
-from utils.randomize import choice
+from utils.randomize import choice, uniform_choice
 from functools import reduce
 
 from generation_projects.blimp.overlay_guards import (
@@ -36,8 +36,8 @@ class Generator(data_generator.BenchmarkGenerator):
         no_match = True
         while no_match:
             try:
-                V_raise = choice(self.raising_verbs)
-                V_control = choice(np.intersect1d(get_same_aux_verbs(V_raise), self.control_verbs))
+                V_raise = uniform_choice(self.raising_verbs)
+                V_control = uniform_choice(np.intersect1d(get_same_aux_verbs(V_raise), self.control_verbs))
                 m_subj = N_to_DP_mutate(choice(get_matches_of(V_raise, "arg_1", get_matches_of(V_control, "arg_1"))))
             except Exception:
                 continue

@@ -3,7 +3,10 @@ from utils.constituent_building import *
 from utils.conjugate import *
 from utils.randomize import choice
 
-from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+from generation_projects.blimp.overlay_guards import (
+    causative_alternating_verb_rows,
+    filter_rows_for_active_zipf,
+)
 
 class CSCGenerator(data_generator.BenchmarkGenerator):
     def __init__(self):
@@ -15,7 +18,7 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
                          two_prefix_method=False,
                          lexically_identical=False)
 
-        self.alternating_verbs = table_union1d(get_all("causative", "1"), get_all("inchoative", "1"))
+        self.alternating_verbs = causative_alternating_verb_rows()
         self.non_alternating_intransitives = get_all("causative", "0", all_intransitive_verbs)
         self.all_singulars = get_all("sg", "1", all_nominals)
         self.all_plurals = get_all("sg", "0", all_nominals)
@@ -27,7 +30,7 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
         # Subj     Aux V_intrans obj
 
         while True:
-            V_cause = choice(self.alternating_verbs)
+            V_cause = choice(filter_rows_for_active_zipf(self.alternating_verbs, "verb"))
             if V_cause["category"] == "S\\NP":
                 Obj = N_to_DP_mutate(choice(get_matches_of(V_cause, "arg_1", all_nominals)))
                 if V_cause["3sg"] == "1":
