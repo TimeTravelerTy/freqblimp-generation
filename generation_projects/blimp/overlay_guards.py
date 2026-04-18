@@ -119,6 +119,23 @@ _DROP_ARGUMENT_GOOD_VERBS = (
     "instruct", "post", "prepare", "quarry", "supervise", "treat",
 )
 
+_DROP_ARGUMENT_BAD_VERBS = (
+    # conservative null-object-resistant transitive verbs
+    "abandon", "address", "admire", "adopt", "affect",
+    "alter", "apprehend", "arrest", "avoid", "banish", "betray", "blame",
+    "block", "capture", "confiscate", "contain",
+    "contradict", "convince", "criticize", "damage", "defeat", "delete",
+    "demolish", "deny", "depict", "deprive", "destroy", "devour", "dismiss",
+    "disturb", "elect", "embrace", "encounter", "endorse", "erase", "evict",
+    "examine", "exclude", "greet", "guard", "humiliate", "identify",
+    "ignore", "imitate", "imprison", "interrogate", "interrupt", "intimidate",
+    "involve", "kidnap", "mention", "mock", "murder", "name", "overthrow",
+    "persuade", "possess", "praise", "prevent", "punish", "question", "quote",
+    "reject", "release", "replace", "rescue", "require", "ridicule", "rob",
+    "seize", "select", "solve", "sue", "surprise", "survey",
+    "transport", "undermine", "upset", "value", "verify", "witness",
+)
+
 _CAUSATIVE_ALTERNATING_VERBS = (
     # thermal / phase change
     "bake", "burn", "char", "condense", "evaporate", "freeze", "liquefy",
@@ -174,7 +191,7 @@ GUARD_REGISTRY = {
     "passive_2": OverlayGuard("passive_2", ("verb",), ("patient", "aux"), "passivizable_en", "nonpassivizable_en"),
     "causative": OverlayGuard("causative", ("verb",), ("subject", "object", "aux"), "alternating", "strict_intransitive"),
     "inchoative": OverlayGuard("inchoative", ("verb",), ("subject", "aux"), "alternating", "strict_transitive"),
-    "drop_argument": OverlayGuard("drop_argument", ("verb",), ("subject", "aux"), "drop_permitting", "strict_transitive"),
+    "drop_argument": OverlayGuard("drop_argument", ("verb",), ("subject", "aux"), "drop_permitting", "drop_forbidden"),
     "animate_subject_passive": OverlayGuard("animate_subject_passive", ("agent_noun",), ("verb", "patient", "copula"), "animate_common_noun", "inanimate_common_noun"),
     "animate_subject_trans": OverlayGuard("animate_subject_trans", ("subject_noun",), ("verb", "object"), "animate_subject", "inanimate_subject"),
     "existential_there_subject_raising": OverlayGuard("existential_there_subject_raising", ("predicate",), ("there", "to_be", "determiner", "embedded_subject", "embedded_vp"), "raising_subject", "control_subject"),
@@ -359,6 +376,11 @@ def existential_bad_control_subject_verb_rows():
 
 def drop_argument_good_verb_rows():
     return _rows_for_expression_families(get_all("strict_trans", "0"), _DROP_ARGUMENT_GOOD_VERBS)
+
+
+def drop_argument_bad_verb_rows():
+    rows = get_all("category", "(S\\NP)/NP")
+    return _rows_for_expression_families(rows, _DROP_ARGUMENT_BAD_VERBS)
 
 
 def causative_alternating_verb_rows():

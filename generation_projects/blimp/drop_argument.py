@@ -4,6 +4,7 @@ from utils.conjugate import *
 from utils.randomize import choice
 
 from generation_projects.blimp.overlay_guards import (
+    drop_argument_bad_verb_rows,
     drop_argument_good_verb_rows,
     filter_rows_for_active_zipf,
 )
@@ -18,8 +19,8 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
                          two_prefix_method=False,
                          lexically_identical=False)
 
-        self.strict_transitive = get_all("strict_trans", "1", all_transitive_verbs)
         self.drop_arg_transitive = drop_argument_good_verb_rows()
+        self.drop_arg_bad_transitive = drop_argument_bad_verb_rows()
 
     def sample(self):
         # The bear has attacked.
@@ -30,7 +31,10 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
         V_non_strict = choice(filter_rows_for_active_zipf(self.drop_arg_transitive, "verb"))
         Subj = N_to_DP_mutate(choice(get_matches_of(V_non_strict, "arg_1", all_nominals)))
         Aux = return_aux(V_non_strict, Subj)
-        V_strict = choice(filter_rows_for_active_zipf(get_matched_by(Subj, "arg_1", get_matches_of(Aux, "arg_2", self.strict_transitive)), "verb"))
+        V_strict = choice(filter_rows_for_active_zipf(
+            get_matched_by(Subj, "arg_1", get_matches_of(Aux, "arg_2", self.drop_arg_bad_transitive)),
+            "verb",
+        ))
 
         data = {
             "sentence_good": "%s %s %s." % (Subj[0], Aux[0], V_non_strict[0]),
