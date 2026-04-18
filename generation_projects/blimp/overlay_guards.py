@@ -30,6 +30,18 @@ _OBJECT_RAISING_VERBS = (
     "remember", "stipulate", "surmise", "verify", "warrant",
 )
 
+_CONTROL_OBJECT_VERBS = (
+    "advise", "ask", "beg", "command", "commission", "compel", "convince", "dare",
+    "encourage", "entice", "force", "induce", "motivate", "obligate", "oblige",
+    "order", "persuade", "press", "pressure", "prod", "prompt", "push", "require",
+    "spur", "sway", "tempt", "urge",
+)
+
+_CONTROL_SUBJECT_VERBS = (
+    "attempt", "bother", "continue", "fail", "hope", "intend", "like", "long",
+    "manage", "need", "neglect", "plan", "propose", "try", "want", "wish", "yearn",
+)
+
 _RAISING_ADJECTIVES = (
     # core modal/dispositional
     "likely", "unlikely", "sure", "certain", "supposed", "going", "bound", "apt",
@@ -298,19 +310,23 @@ def adjective_rows_for_category(category_2: str):
 
 
 def subject_raising_verb_rows():
-    return verb_rows_for_category("V_raising_subj")
+    rows = verb_rows_for_category("V_raising_subj")
+    return _rows_for_expression_families(rows, _SUBJECT_RAISING_VERBS)
 
 
 def control_subject_verb_rows():
-    return verb_rows_for_category("V_control_subj")
+    rows = verb_rows_for_category("V_control_subj")
+    return _rows_for_expression_families(rows, _CONTROL_SUBJECT_VERBS)
 
 
 def object_raising_verb_rows():
-    return verb_rows_for_category("V_raising_object")
+    rows = verb_rows_for_category("V_raising_object")
+    return _rows_for_expression_families(rows, _OBJECT_RAISING_VERBS)
 
 
 def control_object_verb_rows():
-    return verb_rows_for_category("V_control_object")
+    rows = verb_rows_for_category("V_control_object")
+    return _rows_for_expression_families(rows, _CONTROL_OBJECT_VERBS)
 
 
 def subject_raising_adjective_rows():
