@@ -357,7 +357,8 @@ def subject_raising_adjective_rows():
 
 
 def control_subject_adjective_rows():
-    return adjective_rows_for_category("Adj_control_subj")
+    rows = adjective_rows_for_category("Adj_control_subj")
+    return _rows_for_expression_families(rows, _CONTROL_ADJECTIVES)
 
 
 def tough_adjective_rows():
