@@ -247,7 +247,7 @@ def V_to_VP_mutate(verb, aux=True, frequent=True, args=None, allow_recursion=Fal
     :param args: if supplied, the dictionary corresponding to the arguments of the verb
     :return: a vocab entry with the expression containing the string of the full VP
     """
-    VP = verb.copy()
+    VP = widen_expression_field(verb)
     if args is None:
         args = verb_args_from_verb(verb, frequent=frequent, allow_recursion=allow_recursion)
     if aux:
@@ -263,7 +263,7 @@ def make_sentence(frequent=True, allow_recursion=False):
     :param frequent: should only frequent vocab be generated?
     :return: a vocab entry with the expression containing the string of the full sentence
     """
-    verb = choice(all_verbs).copy()
+    verb = widen_expression_field(choice(all_verbs))
     verb[0] = make_sentence_from_verb(verb, frequent=frequent, allow_recursion=allow_recursion)
     return verb
 
@@ -284,7 +284,7 @@ def make_emb_subj_question(frequent=True):
     :param frequent: should only frequent vocab be generated?
     :return: a vocab entry with the expression corresponding to the string of an entire embedded question with a wh-subject
     """
-    verb = choice(all_possibly_singular_verbs).copy()
+    verb = widen_expression_field(choice(all_possibly_singular_verbs))
     args = verb_args_from_verb(verb)
     wh = choice(get_matched_by(args["subj"], "arg_1", all_wh_words))
     args["subj"] = wh
@@ -344,7 +344,7 @@ def N_to_DP_mutate(noun, frequent=True, determiner=True, allow_quantifiers=True,
     :param frequent: restrict to frequent determiners only?
     :return: NONE. mutates string of noun.
     """
-    noun = noun.copy()
+    noun = widen_expression_field(noun)
     args = noun_args_from_noun(noun, frequent, allow_quantifiers=allow_quantifiers, avoid=avoid)
     if determiner and args["det"] is not []:
         noun[0] = " ".join([args["det"][0],
@@ -392,7 +392,7 @@ def make_possessive(DP):
     :param DP: a vocab entry for a full DP (expression of type e)
     :return: the DP with expression containing the string with 's appended
     """
-    DP = DP.copy()
+    DP = widen_expression_field(DP)
     poss_str = "'" if DP["pl"] == "1" and DP[0][-1] == "s" else "'s"
     DP[0] = DP[0] + poss_str
     return DP
@@ -418,7 +418,7 @@ def get_bare_form(verb):
         bare_matches = get_all_conjunctive([("root", root), ("bare", "1")], all_verbs)
         if len(bare_matches) > 0:
             return bare_matches[0].copy()
-    bare_verb = verb.copy()
+    bare_verb = widen_expression_field(verb)
     bare_verb["expression"] = get_bare_form_str(verb["expression"])
     bare_verb["finite"] = "0"
     bare_verb["bare"] = "1"

@@ -22,7 +22,7 @@ def conjugate(verb, subj, allow_negated=True, require_negated=False, change_v_fo
         verb = choice(get_matched_by(subj, "arg_1", get_all("root", verb["root"])))
     verb_agree_auxiliaries = get_matched_by(verb, "arg_2", subj_agree_auxiliaries)
     aux = choice(verb_agree_auxiliaries)
-    verb = verb.copy()
+    verb = widen_expression_field(verb)
     verb[0] = aux[0] + " " + verb[0]
     return verb
 
@@ -40,7 +40,7 @@ def re_conjugate(verb, subj, aux):
                               get_matched_by(subj, "arg_1",
                                              get_all_conjunctive([("root", verb["root"]), ("pres", verb["pres"])])))[0]
     aux = re_conjugate_aux(aux, subj)
-    verb = verb.copy()
+    verb = widen_expression_field(verb)
     verb[0] = aux[0] + " " + verb[0]
     return verb
 

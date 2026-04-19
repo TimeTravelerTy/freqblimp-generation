@@ -466,6 +466,29 @@ def _decode_entry(entry):
     return entry
 
 
+def widen_expression_field(row, min_width=512):
+    dtype = getattr(row, "dtype", None)
+    if dtype is None or not getattr(dtype, "names", None) or "expression" not in dtype.names:
+        return row.copy()
+    expr_dtype = dtype.fields["expression"][0]
+    if expr_dtype.kind != "U":
+        return row.copy()
+    current_width = expr_dtype.itemsize // 4
+    if current_width >= min_width:
+        return row.copy()
+    widened_dtype = []
+    for name in dtype.names:
+        field_dtype = dtype.fields[name][0]
+        if name == "expression":
+            widened_dtype.append((name, "U%d" % max(min_width, current_width)))
+        else:
+            widened_dtype.append((name, field_dtype))
+    widened = np.empty((), dtype=np.dtype(widened_dtype))
+    for name in dtype.names:
+        widened[name] = row[name]
+    return widened[()]
+
+
 def _load_vocab_csv(path, mmap_mode=None):
     return _load_vocab_csv_runtime(path, mmap_mode=mmap_mode)
 
