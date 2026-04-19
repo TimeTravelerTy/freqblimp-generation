@@ -2,6 +2,7 @@ from utils import data_generator
 from utils.constituent_building import *
 from utils.conjugate import *
 from utils.randomize import choice
+from utils.exceptions import LexicalGapError
 from functools import reduce
 
 from generation_projects.blimp.overlay_guards import (
@@ -11,6 +12,7 @@ from generation_projects.blimp.overlay_guards import (
     existential_bad_control_subject_verb_rows,
     filter_plural_looking_singular_nouns,
     overlay_enabled,
+    rows_matching_expressions,
     subject_raising_verb_rows,
     subject_raising_adjective_rows,
 )
@@ -60,7 +62,10 @@ class Generator(data_generator.BenchmarkGenerator):
 
         verbal_predicate = choice([True, False])
         if verbal_predicate:
-            control = choice(np.intersect1d(self.control_verbs, agree_verbs))
+            control_rows = rows_matching_expressions(self.control_verbs, agree_verbs)
+            if len(control_rows) == 0:
+                raise LexicalGapError("No compatible control-subject verbs for agreement class")
+            control = choice(control_rows)
             aux = return_aux(control, emb_subj, allow_negated=allow_negated)
             control = control[0]
         else:
@@ -69,7 +74,10 @@ class Generator(data_generator.BenchmarkGenerator):
             aux = return_copula(emb_subj, allow_negated=allow_negated)
 
         if verbal_predicate:
-            raising = choice(np.intersect1d(self.raising_verbs, get_matches_of(aux, "arg_2", agree_verbs)))
+            raising_rows = rows_matching_expressions(self.raising_verbs, get_matches_of(aux, "arg_2", agree_verbs))
+            if len(raising_rows) == 0:
+                raise LexicalGapError("No compatible subject-raising verbs for auxiliary/agreement class")
+            raising = choice(raising_rows)
             raising = raising[0]
         else:
             raising_row = choice(self.raising_pred_rows) if overlay_enabled() and len(self.raising_pred_rows) > 0 else None

@@ -8,6 +8,7 @@ from functools import reduce
 from generation_projects.blimp.overlay_guards import (
     control_object_verb_rows,
     object_raising_verb_rows,
+    rows_matching_inflection,
 )
 
 class Generator(data_generator.BenchmarkGenerator):
@@ -29,7 +30,7 @@ class Generator(data_generator.BenchmarkGenerator):
         self.control_verbs = control_object_verb_rows()
         self.compatible_pairs = []
         for V_raise in self.raising_verbs:
-            compatible_controls = np.intersect1d(get_same_aux_verbs(V_raise), self.control_verbs)
+            compatible_controls = rows_matching_inflection(self.control_verbs, V_raise)
             for V_control in compatible_controls:
                 subj_pool = get_matches_of(V_raise, "arg_1", get_matches_of(V_control, "arg_1"))
                 if len(subj_pool) > 0:

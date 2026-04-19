@@ -263,6 +263,27 @@ def filter_rows_for_active_zipf(table, controlled_pos: str, fallback_on_empty: b
     return table
 
 
+_INFLECTION_FIELDS = ("finite", "bare", "pres", "past", "ing", "en", "3sg")
+
+
+def rows_matching_inflection(table, template_row):
+    if len(table) == 0:
+        return table
+    mask = np.ones(len(table), dtype=bool)
+    for field in _INFLECTION_FIELDS:
+        mask &= np.asarray(table[field], dtype=str) == str(template_row[field])
+    return table[mask]
+
+
+def rows_matching_expressions(table, allowed_rows):
+    if len(table) == 0:
+        return table
+    if len(allowed_rows) == 0:
+        return table[:0]
+    allowed = np.unique(np.asarray(allowed_rows["expression"], dtype=str))
+    return table[np.isin(np.asarray(table["expression"], dtype=str), allowed)]
+
+
 def _rows_for_expression_families(table, expressions: Sequence[str]):
     families = []
     for expression in expressions:
