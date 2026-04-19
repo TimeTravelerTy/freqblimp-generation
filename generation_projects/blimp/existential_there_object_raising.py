@@ -2,6 +2,7 @@ from utils import data_generator
 from utils.constituent_building import *
 from utils.conjugate import *
 from utils.randomize import choice, uniform_choice
+from utils.exceptions import LexicalGapError
 from functools import reduce
 
 from generation_projects.blimp.overlay_guards import (
@@ -26,6 +27,14 @@ class Generator(data_generator.BenchmarkGenerator):
         self.safe_emb_subjs = np.setdiff1d(all_nominals, bad_emb_subjs)
         self.raising_verbs = object_raising_verb_rows()
         self.control_verbs = control_object_verb_rows()
+        self.compatible_pairs = []
+        for V_raise in self.raising_verbs:
+            compatible_controls = np.intersect1d(get_same_aux_verbs(V_raise), self.control_verbs)
+            for V_control in compatible_controls:
+                subj_pool = get_matches_of(V_raise, "arg_1", get_matches_of(V_control, "arg_1"))
+                if len(subj_pool) > 0:
+                    self.compatible_pairs.append((V_raise, V_control, subj_pool))
+        self.compatible_pairs = tuple(self.compatible_pairs)
 
     def sample(self):
         # John   believed there to be a party    happening
@@ -33,15 +42,11 @@ class Generator(data_generator.BenchmarkGenerator):
         # John   persuaded there to be a party    happening
         # m_subj V_control THERE TO BE D emb_subj VP
 
-        no_match = True
-        while no_match:
-            try:
-                V_raise = uniform_choice(self.raising_verbs)
-                V_control = uniform_choice(np.intersect1d(get_same_aux_verbs(V_raise), self.control_verbs))
-                m_subj = N_to_DP_mutate(choice(get_matches_of(V_raise, "arg_1", get_matches_of(V_control, "arg_1"))))
-            except Exception:
-                continue
-            no_match = False
+        if not self.compatible_pairs:
+            raise LexicalGapError("No compatible raising/control object-raising pairs found")
+
+        V_raise, V_control, subj_pool = uniform_choice(self.compatible_pairs)
+        m_subj = N_to_DP_mutate(choice(subj_pool))
 
         Aux = return_aux(V_raise, m_subj)
 
