@@ -29,13 +29,21 @@ class Generator(data_generator.BenchmarkGenerator):
         self.raising_verbs = object_raising_verb_rows()
         self.control_verbs = control_object_verb_rows()
         self.compatible_pairs = []
+        self._subject_pool_cache = {}
         for V_raise in self.raising_verbs:
             compatible_controls = rows_matching_inflection(self.control_verbs, V_raise)
             for V_control in compatible_controls:
-                subj_pool = get_matches_of(V_raise, "arg_1", get_matches_of(V_control, "arg_1"))
-                if len(subj_pool) > 0:
-                    self.compatible_pairs.append((V_raise, V_control, subj_pool))
+                self.compatible_pairs.append((V_raise, V_control))
         self.compatible_pairs = tuple(self.compatible_pairs)
+
+    def _subject_pool_for_pair(self, V_raise, V_control):
+        key = (str(V_raise["arg_1"]), str(V_control["arg_1"]))
+        cached = self._subject_pool_cache.get(key)
+        if cached is not None:
+            return cached
+        subj_pool = get_matches_of(V_raise, "arg_1", get_matches_of(V_control, "arg_1"))
+        self._subject_pool_cache[key] = subj_pool
+        return subj_pool
 
     def sample(self):
         # John   believed there to be a party    happening
@@ -46,7 +54,15 @@ class Generator(data_generator.BenchmarkGenerator):
         if not self.compatible_pairs:
             raise LexicalGapError("No compatible raising/control object-raising pairs found")
 
-        V_raise, V_control, subj_pool = uniform_choice(self.compatible_pairs)
+        subj_pool = None
+        for _ in range(min(len(self.compatible_pairs), 128)):
+            V_raise, V_control = uniform_choice(self.compatible_pairs)
+            subj_pool = self._subject_pool_for_pair(V_raise, V_control)
+            if len(subj_pool) > 0:
+                break
+        else:
+            raise LexicalGapError("No compatible raising/control object-raising subject pool found")
+
         m_subj = N_to_DP_mutate(choice(subj_pool))
 
         Aux = return_aux(V_raise, m_subj)
