@@ -30,19 +30,45 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
         # The bear has slipped   the lamp.
         # Subj     Aux V_intrans obj
 
+        verb_pool = filter_rows_for_active_zipf(self.alternating_verbs, "verb", fallback_on_empty=False)
+        if len(verb_pool) == 0:
+            raise LexicalGapError("No xtail-compatible alternating verbs for causative")
+
         for _ in range(self.max_sample_attempts):
-            V_cause = choice(filter_rows_for_active_zipf(self.alternating_verbs, "verb"))
+            V_cause = choice(verb_pool)
             if V_cause["category"] == "S\\NP":
-                Obj = N_to_DP_mutate(choice(get_matches_of(V_cause, "arg_1", all_nominals)))
+                obj_pool = filter_rows_for_active_zipf(
+                    get_matches_of(V_cause, "arg_1", all_nominals), "noun", fallback_on_empty=False
+                )
+                if len(obj_pool) == 0:
+                    continue
+                Obj = N_to_DP_mutate(choice(obj_pool))
                 if V_cause["3sg"] == "1":
-                    Subj = N_to_DP_mutate(choice(table_intersect1d(all_animate_nouns, self.all_singulars)))
+                    subj_pool = filter_rows_for_active_zipf(
+                        table_intersect1d(all_animate_nouns, self.all_singulars), "noun", fallback_on_empty=False
+                    )
                 elif V_cause["pres"] == "1":
-                    Subj = N_to_DP_mutate(choice(table_intersect1d(all_animate_nouns, self.all_plurals)))
+                    subj_pool = filter_rows_for_active_zipf(
+                        table_intersect1d(all_animate_nouns, self.all_plurals), "noun", fallback_on_empty=False
+                    )
                 else:
-                    Subj = N_to_DP_mutate(choice(all_animate_nouns))
+                    subj_pool = filter_rows_for_active_zipf(all_animate_nouns, "noun", fallback_on_empty=False)
+                if len(subj_pool) == 0:
+                    continue
+                Subj = N_to_DP_mutate(choice(subj_pool))
             else:
-                Subj = N_to_DP_mutate(choice(get_matches_of(V_cause, "arg_1", all_nominals)))
-                Obj = N_to_DP_mutate(choice(get_matches_of(V_cause, "arg_2", all_nominals)))
+                subj_pool = filter_rows_for_active_zipf(
+                    get_matches_of(V_cause, "arg_1", all_nominals), "noun", fallback_on_empty=False
+                )
+                if len(subj_pool) == 0:
+                    continue
+                Subj = N_to_DP_mutate(choice(subj_pool))
+                obj_pool = filter_rows_for_active_zipf(
+                    get_matches_of(V_cause, "arg_2", all_nominals), "noun", fallback_on_empty=False
+                )
+                if len(obj_pool) == 0:
+                    continue
+                Obj = N_to_DP_mutate(choice(obj_pool))
 
             Aux = return_aux(V_cause, Subj)
 

@@ -59,6 +59,17 @@ def _failure_limit():
     return limit
 
 
+def _paradigm_timeout():
+    raw_value = os.environ.get("FREQBLIMP_PARADIGM_TIMEOUT_S", "").strip()
+    if not raw_value:
+        return None
+    return float(raw_value)
+
+
+def _verbose_failure_log():
+    return os.environ.get("FREQBLIMP_VERBOSE_FAILURE_LOG", "0").strip() == "1"
+
+
 class Generator:
     """
     "Abstract" Class that is instantiated by individual data generation scripts
@@ -157,6 +168,8 @@ class Generator:
         progress = tqdm(total=number_to_generate, desc=constant_data["UID"], unit="pair", dynamic_ncols=True) if progress_enabled else _NullProgress()
         record_trace = trace_recording_enabled()
         failure_limit = _failure_limit()
+        paradigm_timeout = _paradigm_timeout()
+        verbose_failures = _verbose_failure_log()
         while len(past_sentences) < number_to_generate:
             try:
                 if record_trace:
@@ -191,8 +204,10 @@ class Generator:
                     output_writer.write(new_data)
                     progress.update(1)
             except Exception as e:
-                self.log_exception(e)
-                if not isinstance(e, (FrequencyConstraintError, LexicalGapError)):
+                is_expected = isinstance(e, (FrequencyConstraintError, LexicalGapError))
+                if verbose_failures or not is_expected:
+                    self.log_exception(e)
+                if not is_expected:
                     print(self.get_stack_trace(e))
                 error_counter += 1
                 progress.set_postfix(failures=error_counter)
@@ -201,6 +216,12 @@ class Generator:
                     raise Exception(
                         "Over %s sampling failures for %s. Last error: %s"
                         % (failure_limit, constant_data["UID"], getattr(e, "msg", str(e)))
+                    )
+                if paradigm_timeout is not None and (time.time() - started_ts) > paradigm_timeout:
+                    progress.close()
+                    raise TimeoutError(
+                        "Paradigm %s exceeded timeout of %ss after %d accepted pairs"
+                        % (constant_data["UID"], paradigm_timeout, pairID)
                     )
         progress.close()
         output_writer.close()

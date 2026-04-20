@@ -21,6 +21,7 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
 
         self.drop_arg_transitive = drop_argument_good_verb_rows()
         self.drop_arg_bad_transitive = drop_argument_bad_verb_rows()
+        self.max_sample_attempts = 512
 
     def sample(self):
         # The bear has attacked.
@@ -28,13 +29,30 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
         # The bear has injured.
         # Subj     Aux V_strict
 
-        V_non_strict = choice(filter_rows_for_active_zipf(self.drop_arg_transitive, "verb"))
-        Subj = N_to_DP_mutate(choice(get_matches_of(V_non_strict, "arg_1", all_nominals)))
-        Aux = return_aux(V_non_strict, Subj)
-        V_strict = choice(filter_rows_for_active_zipf(
-            get_matched_by(Subj, "arg_1", get_matches_of(Aux, "arg_2", self.drop_arg_bad_transitive)),
-            "verb",
-        ))
+        verb_pool = filter_rows_for_active_zipf(self.drop_arg_transitive, "verb", fallback_on_empty=False)
+        if len(verb_pool) == 0:
+            raise LexicalGapError("No xtail-compatible drop-argument verbs")
+
+        for _ in range(self.max_sample_attempts):
+            V_non_strict = choice(verb_pool)
+            subj_pool = filter_rows_for_active_zipf(
+                get_matches_of(V_non_strict, "arg_1", all_nominals), "noun", fallback_on_empty=False
+            )
+            if len(subj_pool) == 0:
+                continue
+            Subj = N_to_DP_mutate(choice(subj_pool))
+            Aux = return_aux(V_non_strict, Subj)
+            V_strict_pool = filter_rows_for_active_zipf(
+                get_matched_by(Subj, "arg_1", get_matches_of(Aux, "arg_2", self.drop_arg_bad_transitive)),
+                "verb",
+                fallback_on_empty=False,
+            )
+            if len(V_strict_pool) == 0:
+                continue
+            V_strict = choice(V_strict_pool)
+            break
+        else:
+            raise LexicalGapError("No xtail-compatible drop_argument pair found after bounded retries")
 
         data = {
             "sentence_good": "%s %s %s." % (Subj[0], Aux[0], V_non_strict[0]),

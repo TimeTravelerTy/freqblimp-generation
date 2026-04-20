@@ -11,6 +11,7 @@ from generation_projects.blimp.overlay_guards import (
     curated_template_expressions,
     existential_bad_control_subject_verb_rows,
     filter_plural_looking_singular_nouns,
+    filter_rows_for_active_zipf,
     overlay_enabled,
     rows_matching_expressions,
     subject_raising_verb_rows,
@@ -42,6 +43,7 @@ class Generator(data_generator.BenchmarkGenerator):
         self.control_pred_rows = control_subject_adjective_rows()
         self.raising_preds = tuple(curated_template_expressions("Adj_raising_subj"))
         self.control_preds = tuple(curated_template_expressions("Adj_control_subj"))
+        self.max_sample_attempts = 512
 
     def sample(self):
         # There does seem    to be a dog      eating an apple.
@@ -49,43 +51,62 @@ class Generator(data_generator.BenchmarkGenerator):
         # There does try     to be a dog      eating an apple.
         # THERE aux  control TO BE D emb_subj VP
 
-        emb_subj = N_to_DP_mutate(choice(self.safe_emb_subjs), determiner=False)
-        D = choice(get_matched_by(emb_subj, "arg_1", self.good_quantifiers_sg)) \
-            if emb_subj["sg"] == "1" \
-            else choice(get_matched_by(emb_subj, "arg_1", self.good_quantifiers_pl))
-        allow_negated = D[0] != "no" and D[0] != "some"
+        # emb_subj Zipf filter: closed-class curated words dominate; keep fallback for head/tail
+        emb_subj_pool = filter_rows_for_active_zipf(self.safe_emb_subjs, "noun", fallback_on_empty=False)
+        if len(emb_subj_pool) == 0:
+            raise LexicalGapError("No xtail-compatible embedded subjects")
 
-        if emb_subj["sg"] == "1":
-            agree_verbs = all_possibly_singular_verbs
+        for _ in range(self.max_sample_attempts):
+            emb_subj = N_to_DP_mutate(choice(emb_subj_pool), determiner=False)
+            D = choice(get_matched_by(emb_subj, "arg_1", self.good_quantifiers_sg)) \
+                if emb_subj["sg"] == "1" \
+                else choice(get_matched_by(emb_subj, "arg_1", self.good_quantifiers_pl))
+            allow_negated = D[0] != "no" and D[0] != "some"
+
+            if emb_subj["sg"] == "1":
+                agree_verbs = all_possibly_singular_verbs
+            else:
+                agree_verbs = all_possibly_plural_verbs
+
+            verbal_predicate = choice([True, False])
+            if verbal_predicate:
+                # Curated control verbs — fallback_on_empty=True so xtail falls back to full curated list
+                control_candidates = rows_matching_expressions(self.control_verbs, agree_verbs)
+                control_candidates = filter_rows_for_active_zipf(control_candidates, "verb", fallback_on_empty=True)
+                if len(control_candidates) == 0:
+                    raise LexicalGapError("No compatible control-subject verbs for agreement class")
+                control = choice(control_candidates)
+                aux = return_aux(control, emb_subj, allow_negated=allow_negated)
+                control = control[0]
+            else:
+                control_row = choice(self.control_pred_rows) if overlay_enabled() and len(self.control_pred_rows) > 0 else None
+                control = control_row[0] if control_row is not None else choice(self.control_preds)
+                aux = return_copula(emb_subj, allow_negated=allow_negated)
+
+            if verbal_predicate:
+                # Curated raising verbs — fallback_on_empty=True so xtail falls back to full curated list
+                raising_candidates = rows_matching_expressions(self.raising_verbs, get_matches_of(aux, "arg_2", agree_verbs))
+                raising_candidates = filter_rows_for_active_zipf(raising_candidates, "verb", fallback_on_empty=True)
+                if len(raising_candidates) == 0:
+                    raise LexicalGapError("No compatible subject-raising verbs for auxiliary/agreement class")
+                raising = choice(raising_candidates)
+                raising = raising[0]
+            else:
+                raising_row = choice(self.raising_pred_rows) if overlay_enabled() and len(self.raising_pred_rows) > 0 else None
+                raising = raising_row[0] if raising_row is not None else choice(self.raising_preds)
+
+            # Embedded -ing verb: Zipf-filter with fallback=False; retry on empty
+            ing_verb_pool = filter_rows_for_active_zipf(
+                get_matched_by(emb_subj, "arg_1", all_ing_verbs), "verb", fallback_on_empty=False
+            )
+            if len(ing_verb_pool) == 0:
+                continue
+            V = choice(ing_verb_pool)
+            args = verb_args_from_verb(V, subj=emb_subj, allow_negated=allow_negated)
+            VP = V_to_VP_mutate(V, args=args, aux=False)
+            break
         else:
-            agree_verbs = all_possibly_plural_verbs
-
-        verbal_predicate = choice([True, False])
-        if verbal_predicate:
-            control_rows = rows_matching_expressions(self.control_verbs, agree_verbs)
-            if len(control_rows) == 0:
-                raise LexicalGapError("No compatible control-subject verbs for agreement class")
-            control = choice(control_rows)
-            aux = return_aux(control, emb_subj, allow_negated=allow_negated)
-            control = control[0]
-        else:
-            control_row = choice(self.control_pred_rows) if overlay_enabled() and len(self.control_pred_rows) > 0 else None
-            control = control_row[0] if control_row is not None else choice(self.control_preds)
-            aux = return_copula(emb_subj, allow_negated=allow_negated)
-
-        if verbal_predicate:
-            raising_rows = rows_matching_expressions(self.raising_verbs, get_matches_of(aux, "arg_2", agree_verbs))
-            if len(raising_rows) == 0:
-                raise LexicalGapError("No compatible subject-raising verbs for auxiliary/agreement class")
-            raising = choice(raising_rows)
-            raising = raising[0]
-        else:
-            raising_row = choice(self.raising_pred_rows) if overlay_enabled() and len(self.raising_pred_rows) > 0 else None
-            raising = raising_row[0] if raising_row is not None else choice(self.raising_preds)
-
-        V = choice(get_matched_by(emb_subj, "arg_1", all_ing_verbs))
-        args = verb_args_from_verb(V, subj=emb_subj, allow_negated=allow_negated)
-        VP = V_to_VP_mutate(V, args=args, aux=False)
+            raise LexicalGapError("No xtail-compatible existential_there_subject_raising sample after bounded retries")
 
         data = {
             "sentence_good": "There %s %s to be %s %s %s." % (aux[0], raising, D[0], emb_subj[0], VP[0]),

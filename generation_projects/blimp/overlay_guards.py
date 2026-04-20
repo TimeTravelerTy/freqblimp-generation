@@ -5,7 +5,13 @@ from typing import Iterable, Optional, Sequence
 import numpy as np
 
 from utils.randomize import get_active_policy
-from utils.vocab_table import get_all, get_table_zipf_expression, table_union1d
+from utils.vocab_table import (
+    _table_cache_key,
+    get_all,
+    get_table_zipf_expression,
+    register_query_cache_clear_hook,
+    table_union1d,
+)
 
 
 _SUBJECT_RAISING_VERBS = (
@@ -242,6 +248,16 @@ def overlay_enabled() -> bool:
     return bool(policy and getattr(policy, "overlay_enabled", False))
 
 
+_ZIPF_FILTER_CACHE: dict = {}
+
+
+def _clear_zipf_filter_cache():
+    _ZIPF_FILTER_CACHE.clear()
+
+
+register_query_cache_clear_hook(_clear_zipf_filter_cache)
+
+
 def filter_rows_for_active_zipf(table, controlled_pos: str, fallback_on_empty: bool=True):
     policy = get_active_policy()
     if policy is None or len(table) == 0:
@@ -251,6 +267,10 @@ def filter_rows_for_active_zipf(table, controlled_pos: str, fallback_on_empty: b
     lower, upper = policy.bounds_for(controlled_pos)
     if lower is None and upper is None:
         return table
+    cache_key = (_table_cache_key(table), controlled_pos, lower, upper, bool(fallback_on_empty))
+    cached = _ZIPF_FILTER_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
     zipf_values = get_table_zipf_expression(table)
     mask = np.ones(len(table), dtype=bool)
     if lower is not None:
@@ -258,9 +278,10 @@ def filter_rows_for_active_zipf(table, controlled_pos: str, fallback_on_empty: b
     if upper is not None:
         mask &= zipf_values <= upper
     filtered = table[mask]
-    if len(filtered) > 0 or not fallback_on_empty:
-        return filtered
-    return table
+    if len(filtered) == 0 and fallback_on_empty:
+        filtered = table
+    _ZIPF_FILTER_CACHE[cache_key] = filtered
+    return filtered
 
 
 _INFLECTION_FIELDS = ("finite", "bare", "pres", "past", "ing", "en", "3sg")

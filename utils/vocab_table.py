@@ -358,9 +358,22 @@ def _normalize_table(table):
     return table
 
 
+_QUERY_CACHE_CLEAR_HOOKS: list = []
+
+
+def register_query_cache_clear_hook(hook):
+    """Register a zero-arg callable run at the end of clear_query_caches().
+
+    External modules (e.g. overlay_guards) use this to hang their own caches
+    off the same invalidation event without having to import their module into
+    vocab_table directly.
+    """
+    if hook not in _QUERY_CACHE_CLEAR_HOOKS:
+        _QUERY_CACHE_CLEAR_HOOKS.append(hook)
+
+
 def clear_query_caches():
     global _OVERLAY_METADATA_REGISTRY, _OVERLAY_METADATA_REGISTRY_PATH
-    global _EXPRESSION_ZIPF_REGISTRY, _EXPRESSION_ZIPF_REGISTRY_PATH
     _GET_ALL_CACHE.clear()
     _GET_ALL_CONJ_CACHE.clear()
     _GET_MATCHES_OF_CACHE.clear()
@@ -372,12 +385,13 @@ def clear_query_caches():
     _ROW_FREQUENCY_CACHE.clear()
     _OVERLAY_METADATA_REGISTRY = None
     _OVERLAY_METADATA_REGISTRY_PATH = None
-    _EXPRESSION_ZIPF_REGISTRY = None
-    _EXPRESSION_ZIPF_REGISTRY_PATH = None
-    # Release cached vocab subsets held by LazyVocabSet instances so the large
-    # numpy arrays can be freed between paradigm runs.
+    # _EXPRESSION_ZIPF_REGISTRY intentionally preserved: expression->zipf is
+    # immutable for the process lifetime, and reloading frequency_cache.json
+    # per paradigm dominated runtime before.
     for _lazy_set in _LAZY_REGISTRY:
         _lazy_set._value = None
+    for hook in _QUERY_CACHE_CLEAR_HOOKS:
+        hook()
     gc.collect()
 
 

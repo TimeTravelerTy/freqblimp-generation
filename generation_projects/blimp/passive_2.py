@@ -16,8 +16,15 @@ class Generator(data_generator.BenchmarkGenerator):
                          lexically_identical=False)
 
         self.en_verbs = get_all("en", "1")
-        self.intransitive = get_all("passive", "0", self.en_verbs)
+        # Purely intransitive: strict_intrans=1 marks verbs with no transitive frame.
+        # This structurally excludes ambitransitive verbs like "contemplate"/"ponder"
+        # that carry both frames and whose passives are grammatical.
+        self.intransitive = get_all_conjunctive(
+            [("strict_intrans", "1"), ("passive", "0")],
+            self.en_verbs,
+        )
         self.transitive = get_all("passive", "1", self.en_verbs)
+        self.max_sample_attempts = 512
 
     def sample(self):
         # The girl was attacked.
@@ -25,10 +32,27 @@ class Generator(data_generator.BenchmarkGenerator):
         # The girl was smiled.
         # NP1      be  V_intrans
 
-        V_intrans = choice(filter_rows_for_active_zipf(self.intransitive, "verb"))
-        NP1 = N_to_DP_mutate(choice(get_matches_of(V_intrans, "arg_1", all_nominals)))
-        V_trans = choice(filter_rows_for_active_zipf(get_matched_by(NP1, "arg_2", self.transitive), "verb"))
-        be = return_copula(NP1)
+        for _ in range(self.max_sample_attempts):
+            V_intrans_pool = filter_rows_for_active_zipf(self.intransitive, "verb", fallback_on_empty=False)
+            if len(V_intrans_pool) == 0:
+                raise LexicalGapError("No xtail-compatible purely-intransitive verb")
+            V_intrans = choice(V_intrans_pool)
+            NP1_candidates = filter_rows_for_active_zipf(
+                get_matches_of(V_intrans, "arg_1", all_nominals), "noun", fallback_on_empty=False
+            )
+            if len(NP1_candidates) == 0:
+                continue
+            NP1 = N_to_DP_mutate(choice(NP1_candidates))
+            V_trans_pool = filter_rows_for_active_zipf(
+                get_matched_by(NP1, "arg_2", self.transitive), "verb", fallback_on_empty=False
+            )
+            if len(V_trans_pool) == 0:
+                continue
+            V_trans = choice(V_trans_pool)
+            be = return_copula(NP1)
+            break
+        else:
+            raise LexicalGapError("No xtail-compatible passive pair found after bounded retries")
 
         data = {
             "sentence_good": "%s %s %s." % (NP1[0], be[0], V_trans[0]),

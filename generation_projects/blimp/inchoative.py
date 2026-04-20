@@ -30,17 +30,32 @@ class Generator(data_generator.BenchmarkGenerator):
         # The lamp has pained.
         # Subj     Aux V_trans
 
+        verb_pool = filter_rows_for_active_zipf(self.alternating_verbs, "verb", fallback_on_empty=False)
+        if len(verb_pool) == 0:
+            raise LexicalGapError("No xtail-compatible alternating verbs for inchoative")
+
         for _ in range(self.max_sample_attempts):
-            V_inch = choice(filter_rows_for_active_zipf(self.alternating_verbs, "verb"))
+            V_inch = choice(verb_pool)
             if V_inch["category"] == "(S\\NP)/NP":
                 if V_inch["3sg"] == "1":
-                    Subj = N_to_DP_mutate(choice(get_matches_of(V_inch, "arg_2", self.all_singulars)))
+                    subj_pool = filter_rows_for_active_zipf(
+                        get_matches_of(V_inch, "arg_2", self.all_singulars), "noun", fallback_on_empty=False
+                    )
                 elif V_inch["pres"] == "1":
-                    Subj = N_to_DP_mutate(choice(get_matches_of(V_inch, "arg_2", self.all_plurals)))
+                    subj_pool = filter_rows_for_active_zipf(
+                        get_matches_of(V_inch, "arg_2", self.all_plurals), "noun", fallback_on_empty=False
+                    )
                 else:
-                    Subj = N_to_DP_mutate(choice(get_matches_of(V_inch, "arg_2", all_nominals)))
+                    subj_pool = filter_rows_for_active_zipf(
+                        get_matches_of(V_inch, "arg_2", all_nominals), "noun", fallback_on_empty=False
+                    )
             else:
-                Subj = N_to_DP_mutate(choice(get_matches_of(V_inch, "arg_1")))
+                subj_pool = filter_rows_for_active_zipf(
+                    get_matches_of(V_inch, "arg_1"), "noun", fallback_on_empty=False
+                )
+            if len(subj_pool) == 0:
+                continue
+            Subj = N_to_DP_mutate(choice(subj_pool))
             Aux = return_aux(V_inch, Subj)
             if Subj["sg"] == "1":
                 safe_verbs = table_intersect1d(self.non_alternating_transitives, all_possibly_singular_verbs)

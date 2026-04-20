@@ -1,7 +1,6 @@
 from utils import data_generator
 from utils.conjugate import *
 from utils.constituent_building import *
-from utils.conjugate import *
 from utils.randomize import choice
 from utils.string_utils import string_beautify
 from functools import reduce
@@ -24,6 +23,7 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
         self.dets = ['the', 'some']
         self.location_nouns = get_all("locale", "1")
         self.nonlocation_commonnouns = table_setdiff1d(all_common_nouns, self.location_nouns)
+        self.max_sample_attempts = 512
 
     def sample(self):
         # The boy was talked to by the woman
@@ -31,13 +31,39 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
         # The boy was talked to by the car
         # N1      cop V1        by det N2_bad
 
-        V1 = choice(get_all('en', '1', self.all_anim_subj_verbs))
+        verb_pool = filter_rows_for_active_zipf(
+            get_all('en', '1', self.all_anim_subj_verbs), "verb", fallback_on_empty=False
+        )
+        if len(verb_pool) == 0:
+            raise LexicalGapError("No xtail-compatible animate-subject passive verbs")
 
-        N1 = N_to_DP_mutate(choice(get_matches_of(V1, 'arg_2', all_nouns)))
-        cop = return_copula(N1)
-        det = choice(self.dets)
-        N2_good = choice(filter_rows_for_active_zipf(get_all("animate", "1", get_matched_by(V1, "arg_1", all_common_nouns)), "noun"))
-        N2_bad = choice(filter_rows_for_active_zipf(get_all("animate", "0", self.nonlocation_commonnouns), "noun"))
+        for _ in range(self.max_sample_attempts):
+            V1 = choice(verb_pool)
+            N1_candidates = filter_rows_for_active_zipf(
+                get_matches_of(V1, 'arg_2', all_nouns), "noun", fallback_on_empty=False
+            )
+            if len(N1_candidates) == 0:
+                continue
+            N1 = N_to_DP_mutate(choice(N1_candidates))
+            cop = return_copula(N1)
+            det = choice(self.dets)
+            N2_good_candidates = filter_rows_for_active_zipf(
+                get_all("animate", "1", get_matched_by(V1, "arg_1", all_common_nouns)),
+                "noun",
+                fallback_on_empty=False,
+            )
+            if len(N2_good_candidates) == 0:
+                continue
+            N2_good = choice(N2_good_candidates)
+            N2_bad_candidates = filter_rows_for_active_zipf(
+                get_all("animate", "0", self.nonlocation_commonnouns), "noun", fallback_on_empty=False
+            )
+            if len(N2_bad_candidates) == 0:
+                continue
+            N2_bad = choice(N2_bad_candidates)
+            break
+        else:
+            raise LexicalGapError("No xtail-compatible animate_subject_passive pair found after bounded retries")
 
         data = {
             "sentence_good": "%s %s %s by %s %s." % (N1[0], cop[0], V1[0], det, N2_good[0]),
