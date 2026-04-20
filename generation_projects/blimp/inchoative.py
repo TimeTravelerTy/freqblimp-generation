@@ -22,6 +22,7 @@ class Generator(data_generator.BenchmarkGenerator):
         self.non_alternating_transitives = get_all("strict_trans", "1", get_all("inchoative", "0", all_transitive_verbs))
         self.all_singulars = get_all("sg", "1", all_nominals)
         self.all_plurals = get_all("sg", "0", all_nominals)
+        self.max_sample_attempts = 512
 
     def sample(self):
         # The lamp has broken.
@@ -29,7 +30,7 @@ class Generator(data_generator.BenchmarkGenerator):
         # The lamp has pained.
         # Subj     Aux V_trans
 
-        while True:
+        for _ in range(self.max_sample_attempts):
             V_inch = choice(filter_rows_for_active_zipf(self.alternating_verbs, "verb"))
             if V_inch["category"] == "(S\\NP)/NP":
                 if V_inch["3sg"] == "1":
@@ -54,6 +55,8 @@ class Generator(data_generator.BenchmarkGenerator):
                 continue
             V_trans = choice(bad_candidates)
             break
+        else:
+            raise LexicalGapError("No xtail-compatible inchoative/transitive pair found after bounded retries")
 
         data = {
             "sentence_good": "%s %s %s." % (Subj[0], Aux[0], V_inch[0]),

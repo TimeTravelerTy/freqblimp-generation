@@ -22,6 +22,7 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
         self.non_alternating_intransitives = get_all("causative", "0", all_intransitive_verbs)
         self.all_singulars = get_all("sg", "1", all_nominals)
         self.all_plurals = get_all("sg", "0", all_nominals)
+        self.max_sample_attempts = 512
 
     def sample(self):
         # The bear has broken  the lamp.
@@ -29,7 +30,7 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
         # The bear has slipped   the lamp.
         # Subj     Aux V_intrans obj
 
-        while True:
+        for _ in range(self.max_sample_attempts):
             V_cause = choice(filter_rows_for_active_zipf(self.alternating_verbs, "verb"))
             if V_cause["category"] == "S\\NP":
                 Obj = N_to_DP_mutate(choice(get_matches_of(V_cause, "arg_1", all_nominals)))
@@ -58,6 +59,8 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
                 continue
             V_intrans = choice(bad_candidates)
             break
+        else:
+            raise LexicalGapError("No xtail-compatible causative/intransitive pair found after bounded retries")
 
         data = {
             "sentence_good": "%s %s %s %s." % (Subj[0], Aux[0], V_cause[0], Obj[0]),
