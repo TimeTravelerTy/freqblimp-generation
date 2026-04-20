@@ -109,8 +109,10 @@ def _probe_uid_regime(uid, regime, attempts, timeout_s):
         try:
             generator = _build_generator(uid)
         except Exception as e:
+            import traceback as _tb
+            sys.stderr.write("  init_failed %s x %s: %s\n" % (uid, regime, str(e)[:120]))
             return {"uid": uid, "regime": regime, "accepted": 0, "failed": attempts,
-                    "elapsed_s": 0.0, "error": "init_failed: %s" % str(e)[:80]}
+                    "elapsed_s": 0.0, "errors": "init_failed: %s" % str(e)[:80]}
 
         accepted = 0
         failed = 0
