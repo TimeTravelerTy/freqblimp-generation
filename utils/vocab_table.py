@@ -388,8 +388,11 @@ def clear_query_caches():
     # _EXPRESSION_ZIPF_REGISTRY intentionally preserved: expression->zipf is
     # immutable for the process lifetime, and reloading frequency_cache.json
     # per paradigm dominated runtime before.
-    for _lazy_set in _LAZY_REGISTRY:
-        _lazy_set._value = None
+    # _LAZY_REGISTRY intentionally preserved: lazy vocab sets (all_nouns,
+    # all_transitive_verbs, etc.) are derived solely from the process-lifetime
+    # vocabulary table. Clearing them forces large numpy reallocations every
+    # paradigm; Python's allocator retains pages at peak, causing RSS to double
+    # at the first paradigm that touches all_nouns/all_transitive_verbs together.
     for hook in _QUERY_CACHE_CLEAR_HOOKS:
         hook()
     gc.collect()
