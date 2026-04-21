@@ -146,20 +146,6 @@ _DROP_ARGUMENT_BAD_VERBS = (
     "transport", "undermine", "upset", "value", "verify", "witness",
 )
 
-_INCHOATIVE_BAD_TRANSITIVE_VERBS = (
-    # Plain-transitive subset of the original broad inchoative bad pool.
-    # We exclude PP/particle-taking verbs here entirely, but keep wide lexical
-    # coverage so xtail still has enough compatible bad verbs after subject/object
-    # matching.
-    "admire", "bend", "bite", "breed", "build", "catch", "choose",
-    "conceal", "cure", "dislike", "drive", "examine", "expose", "fight",
-    "find", "fire", "forgive", "freeze", "get", "hear", "hold", "keep",
-    "lead", "lift", "light", "like", "make", "meet", "reference",
-    "resemble", "respect", "reveal", "scare", "shake", "shoot", "sink",
-    "spend", "steal", "strike", "sweep", "tear", "throw", "understand",
-    "wear",
-)
-
 _CAUSATIVE_ALTERNATING_VERBS = (
     # thermal / phase change
     "acidify", "bake", "burn", "caramelize", "char", "coagulate", "condense",
@@ -515,8 +501,14 @@ def drop_argument_bad_verb_rows():
 
 
 def inchoative_bad_transitive_rows():
-    rows = get_all("strict_trans", "1", get_all("inchoative", "0", get_all("verb", "1")))
-    return _rows_for_expression_families(rows, _INCHOATIVE_BAD_TRANSITIVE_VERBS, expand_inflections=True)
+    rows = get_all("category", "(S\\NP)/NP", get_all("verb", "1"))
+    # Keep only plain transitive surface forms; PP/particle verbs are excluded
+    # structurally rather than by a lexical denylist.
+    expr = np.asarray(rows["expression"], dtype=str)
+    plain_rows = rows[np.array([" " not in value for value in expr], dtype=bool)]
+    alternating_roots = set(map(str, causative_alternating_verb_rows()["root"]))
+    keep_mask = ~np.isin(np.asarray(plain_rows["root"], dtype=str), list(alternating_roots))
+    return plain_rows[keep_mask]
 
 
 def causative_alternating_verb_rows():
