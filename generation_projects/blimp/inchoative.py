@@ -26,7 +26,10 @@ class Generator(data_generator.BenchmarkGenerator):
         self.all_singulars = get_all("sg", "1", self.safe_nominals)
         self.all_plurals = get_all("sg", "0", self.safe_nominals)
         zipf_bad_pool = filter_rows_for_active_zipf(self.non_alternating_transitives, "verb", fallback_on_empty=False)
-        self.relax_bad_verb_zipf = len(np.unique(np.asarray(zipf_bad_pool["root"], dtype=str))) < 10
+        # Tail/xtail get too few globally Zipf-valid bad roots to maintain a
+        # stable, diverse bad-side verb pool. Relax the bad slot when support is
+        # tight instead of collapsing onto a few survivors.
+        self.relax_bad_verb_zipf = len(np.unique(np.asarray(zipf_bad_pool["root"], dtype=str))) < 25
         self.max_sample_attempts = 512
 
     def sample(self):
