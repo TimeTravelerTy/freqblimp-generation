@@ -5,6 +5,7 @@ from utils.randomize import choice
 
 from generation_projects.blimp.overlay_guards import (
     causative_alternating_verb_rows,
+    dp_buildable_nominal_rows,
     filter_rows_for_active_zipf,
 )
 
@@ -20,8 +21,9 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
 
         self.alternating_verbs = causative_alternating_verb_rows()
         self.non_alternating_intransitives = get_all("causative", "0", all_intransitive_verbs)
-        self.all_singulars = get_all("sg", "1", all_nominals)
-        self.all_plurals = get_all("sg", "0", all_nominals)
+        self.safe_nominals = dp_buildable_nominal_rows()
+        self.all_singulars = get_all("sg", "1", self.safe_nominals)
+        self.all_plurals = get_all("sg", "0", self.safe_nominals)
         self.max_sample_attempts = 512
 
     def sample(self):
@@ -38,7 +40,7 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
             V_cause = choice(verb_pool)
             if V_cause["category"] == "S\\NP":
                 obj_pool = filter_rows_for_active_zipf(
-                    get_matches_of(V_cause, "arg_1", all_nominals), "noun", fallback_on_empty=False
+                    get_matches_of(V_cause, "arg_1", self.safe_nominals), "noun", fallback_on_empty=False
                 )
                 if len(obj_pool) == 0:
                     continue
@@ -58,13 +60,13 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
                 Subj = N_to_DP_mutate(choice(subj_pool))
             else:
                 subj_pool = filter_rows_for_active_zipf(
-                    get_matches_of(V_cause, "arg_1", all_nominals), "noun", fallback_on_empty=False
+                    get_matches_of(V_cause, "arg_1", self.safe_nominals), "noun", fallback_on_empty=False
                 )
                 if len(subj_pool) == 0:
                     continue
                 Subj = N_to_DP_mutate(choice(subj_pool))
                 obj_pool = filter_rows_for_active_zipf(
-                    get_matches_of(V_cause, "arg_2", all_nominals), "noun", fallback_on_empty=False
+                    get_matches_of(V_cause, "arg_2", self.safe_nominals), "noun", fallback_on_empty=False
                 )
                 if len(obj_pool) == 0:
                     continue

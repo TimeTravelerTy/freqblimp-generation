@@ -4,6 +4,7 @@ from typing import Iterable, Optional, Sequence
 
 import numpy as np
 
+from utils.vocab_sets import all_nominals
 from utils.exceptions import LexicalGapError
 from utils.randomize import get_active_policy, uniform_choice
 from utils.vocab_table import (
@@ -468,6 +469,21 @@ def clausal_it_adjective_rows():
 def existential_bad_control_subject_verb_rows():
     rows = control_subject_verb_rows()
     return _exclude_expression_families(rows, _EXISTENTIAL_CONTROL_SUBJECT_EXCLUDED_VERBS)
+
+
+@lru_cache(maxsize=1)
+def dp_buildable_nominal_rows():
+    """Nominals that N_to_DP_mutate can safely realize as DPs."""
+    return table_union1d(
+        table_union1d(
+            get_all("category", "N", all_nominals),
+            get_all("category", "N/NP", all_nominals),
+        ),
+        table_union1d(
+            get_all("category", "N\\NP[poss]", all_nominals),
+            get_all("category", "N/S", all_nominals),
+        ),
+    )
 
 
 def drop_argument_good_verb_rows():
