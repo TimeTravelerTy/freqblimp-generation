@@ -1,7 +1,7 @@
 from utils import data_generator
 from utils.constituent_building import *
 from utils.conjugate import *
-from utils.randomize import choice
+from utils.randomize import choice, uniform_choice
 
 from generation_projects.blimp.overlay_guards import (
     causative_alternating_verb_rows,
@@ -24,6 +24,8 @@ class Generator(data_generator.BenchmarkGenerator):
         self.safe_nominals = dp_buildable_nominal_rows()
         self.all_singulars = get_all("sg", "1", self.safe_nominals)
         self.all_plurals = get_all("sg", "0", self.safe_nominals)
+        zipf_bad_pool = filter_rows_for_active_zipf(self.non_alternating_transitives, "verb", fallback_on_empty=False)
+        self.relax_bad_verb_zipf = len(np.unique(np.asarray(zipf_bad_pool["root"], dtype=str))) < 10
         self.max_sample_attempts = 512
 
     def sample(self):
@@ -63,14 +65,20 @@ class Generator(data_generator.BenchmarkGenerator):
                 safe_verbs = table_intersect1d(self.non_alternating_transitives, all_possibly_singular_verbs)
             else:
                 safe_verbs = table_intersect1d(self.non_alternating_transitives, all_possibly_plural_verbs)
-            bad_candidates = filter_rows_for_active_zipf(
-                get_matched_by(Subj, "arg_2", get_matches_of(Aux, "arg_2", safe_verbs)),
-                "verb",
-                fallback_on_empty=False,
-            )
+            bad_candidates = get_matched_by(Subj, "arg_2", get_matches_of(Aux, "arg_2", safe_verbs))
             if len(bad_candidates) == 0:
                 continue
-            V_trans = choice(bad_candidates)
+            if self.relax_bad_verb_zipf:
+                V_trans = uniform_choice(bad_candidates)
+            else:
+                bad_candidates = filter_rows_for_active_zipf(
+                    bad_candidates,
+                    "verb",
+                    fallback_on_empty=False,
+                )
+                if len(bad_candidates) == 0:
+                    continue
+                V_trans = choice(bad_candidates)
             break
         else:
             raise LexicalGapError("No xtail-compatible inchoative/transitive pair found after bounded retries")

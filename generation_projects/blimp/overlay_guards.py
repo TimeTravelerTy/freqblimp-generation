@@ -72,7 +72,7 @@ _RAISING_ADJECTIVES = (
 _CONTROL_ADJECTIVES = (
     "eager", "ready", "willing", "unable", "able", "happy", "sad", "afraid",
     "anxious", "excited", "careful", "lucky", "reluctant", "hesitant", "keen",
-    "loath", "quick", "slow", "prepared", "determined", "motivated", "impatient",
+    "loath", "quick", "slow", "prepared", "motivated", "impatient",
     "intent", "disinclined", "indisposed", "solicitous", "studious", "importunate",
     "powerless", "impotent", "desperate", "resolved", "fain", "minded", "chary",
 )
@@ -458,7 +458,8 @@ def control_subject_adjective_rows():
 
 
 def tough_adjective_rows():
-    return adjective_rows_for_category("Adj_tough")
+    rows = adjective_rows_for_category("Adj_tough")
+    return _rows_for_expression_families(rows, _TOUGH_ADJECTIVES)
 
 
 def clausal_it_adjective_rows():
