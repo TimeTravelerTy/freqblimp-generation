@@ -189,19 +189,6 @@ _NUMBER_WORDS = {
     9: "nine",
     10: "ten",
 }
-_STRANDED_PREP_SUFFIXES = (
-    " with",
-    " for",
-    " to",
-    " from",
-    " at",
-    " on",
-    " in",
-    " about",
-    " of",
-)
-
-
 @dataclass(frozen=True)
 class OverlayGuard:
     uid: str
@@ -536,17 +523,6 @@ def filter_nouns_for_requirement(table, req: Optional[str]):
     if req == "MASS":
         return get_all("mass", "1", table)
     return table
-
-
-def filter_stranded_preposition_verbs(table):
-    if len(table) == 0:
-        return table
-    expressions = np.asarray(table["expression"], dtype=str)
-    keep_mask = np.ones(len(expressions), dtype=bool)
-    for suffix in _STRANDED_PREP_SUFFIXES:
-        keep_mask &= ~np.char.endswith(expressions, suffix)
-    filtered = table[keep_mask]
-    return filtered if len(filtered) > 0 else table
 
 
 @lru_cache(maxsize=4096)
