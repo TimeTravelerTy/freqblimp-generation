@@ -5,6 +5,7 @@ from utils.randomize import choice, uniform_choice
 from utils.vocab_sets import *
 
 from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+from generation_projects.blimp.overlay_guards import non_past_verb_rows
 
 class AgreementGenerator(data_generator.BenchmarkGenerator):
     def __init__(self):
@@ -17,7 +18,7 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
                          lexically_identical=False)
         self.all_reg_nouns = get_all_conjunctive([("noun", "1"), ("irrpl", "")])
         self.safe_subjs = get_all("category", "N/NP", self.all_reg_nouns)
-        self.safe_verbs = np.setdiff1d(all_verbs, get_all("past", "1"))
+        self.safe_verbs = non_past_verb_rows()
 
     def sample(self):
         # The doctor of the men is        helping some people.

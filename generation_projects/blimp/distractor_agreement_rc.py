@@ -5,6 +5,7 @@ from utils.randomize import choice
 from utils.vocab_sets import *
 
 from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+from generation_projects.blimp.overlay_guards import non_past_verb_rows
 
 
 class AgreementGenerator(data_generator.BenchmarkGenerator):
@@ -18,7 +19,7 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
                          lexically_identical=False)
         self.all_reg_nouns = get_all_conjunctive([("category", "N"), ("irrpl", "")], all_common_nouns)
         self.safe_emb_verbs = all_transitive_verbs
-        self.safe_mat_verbs = np.setdiff1d(all_verbs, get_all("past", "1"))
+        self.safe_mat_verbs = non_past_verb_rows()
 
     def sample(self):
         # The cat   that was      eating the mice is        sleeping

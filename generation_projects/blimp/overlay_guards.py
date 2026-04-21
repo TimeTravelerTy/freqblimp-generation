@@ -10,6 +10,7 @@ from utils.vocab_table import (
     get_all,
     get_table_zipf_expression,
     register_query_cache_clear_hook,
+    table_setdiff1d,
     table_union1d,
 )
 
@@ -230,6 +231,7 @@ GUARD_REGISTRY = {
 }
 
 
+@lru_cache(maxsize=1)
 def build_agreement_safe_verbs():
     """Union of pres/ing/en verbs, minus forms homophonous with a past tense.
 
@@ -257,6 +259,13 @@ def build_agreement_safe_verbs():
     if np.any(is_ambiguous):
         safe_verbs = np.setdiff1d(safe_verbs, pres_verbs[is_ambiguous])
     return safe_verbs
+
+
+@lru_cache(maxsize=1)
+def non_past_verb_rows():
+    from utils.vocab_sets import all_verbs as _all_verbs
+
+    return table_setdiff1d(_all_verbs, get_all("past", "1", _all_verbs))
 
 
 def overlay_enabled() -> bool:
