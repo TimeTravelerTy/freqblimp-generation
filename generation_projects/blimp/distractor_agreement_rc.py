@@ -5,6 +5,7 @@ from utils.randomize import choice
 from utils.vocab_sets import *
 
 from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+from generation_projects.blimp.overlay_guards import mismatching_nonpast_agreement_form
 from generation_projects.blimp.overlay_guards import non_past_verb_rows
 
 
@@ -32,13 +33,7 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
             V_mat_agree = choice(filter_rows_for_active_zipf(self.safe_mat_verbs, "verb"))
             subj = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V_mat_agree, "arg_1", self.all_reg_nouns), "noun")))
             rel = choice(get_matched_by(subj, "arg_1", get_all("category_2", "rel")))
-            if V_mat_agree["finite"] == "1":
-                if V_mat_agree["3sg"] == "1":
-                    V_mat_not_agree = choice(get_all_conjunctive([("pres", "1"), ("3sg", "0")], get_all("root", V_mat_agree["root"])))
-                else:
-                    V_mat_not_agree = choice(get_all_conjunctive([("pres", "1"), ("3sg", "1")], get_all("root", V_mat_agree["root"])))
-            else:
-                V_mat_not_agree = V_mat_agree
+            V_mat_not_agree = mismatching_nonpast_agreement_form(V_mat_agree)
 
             if subj["pl"] == "1":
                 obj_emb = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V_mat_not_agree, "arg_1", all_singular_nouns), "noun")))

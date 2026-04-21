@@ -4,10 +4,12 @@ from typing import Iterable, Optional, Sequence
 
 import numpy as np
 
-from utils.randomize import get_active_policy
+from utils.exceptions import LexicalGapError
+from utils.randomize import get_active_policy, uniform_choice
 from utils.vocab_table import (
     _table_cache_key,
     get_all,
+    get_all_conjunctive,
     get_table_zipf_expression,
     register_query_cache_clear_hook,
     table_setdiff1d,
@@ -266,6 +268,28 @@ def non_past_verb_rows():
     from utils.vocab_sets import all_verbs as _all_verbs
 
     return table_setdiff1d(_all_verbs, get_all("past", "1", _all_verbs))
+
+
+def mismatching_nonpast_agreement_form(verb_row):
+    """Return the opposite 3sg present-tense form for the same root.
+
+    The lexical item has already been chosen when `verb_row` is sampled, so the
+    disagreement form should not trigger another Zipf-constrained lexical draw.
+    Using uniform choice here removes a major retry hotspot in subject-verb
+    agreement generators under narrow regimes like xtail.
+    """
+    if verb_row["finite"] != "1":
+        return verb_row
+    target_3sg = "0" if verb_row["3sg"] == "1" else "1"
+    alt_forms = get_all_conjunctive(
+        [("pres", "1"), ("3sg", target_3sg)],
+        get_all("root", verb_row["root"]),
+    )
+    if len(alt_forms) == 0:
+        raise LexicalGapError(
+            "No mismatching non-past agreement form for root=%s" % verb_row["root"]
+        )
+    return uniform_choice(alt_forms)
 
 
 def overlay_enabled() -> bool:

@@ -5,6 +5,7 @@ from utils.randomize import choice, uniform_choice
 from utils.vocab_sets import *
 
 from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+from generation_projects.blimp.overlay_guards import mismatching_nonpast_agreement_form
 from generation_projects.blimp.overlay_guards import non_past_verb_rows
 
 class AgreementGenerator(data_generator.BenchmarkGenerator):
@@ -31,15 +32,7 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
             subj = uniform_choice(self.safe_subjs)
             D = choice(get_matched_by(subj, "arg_1", all_very_common_dets))
             V_agree = choice(filter_rows_for_active_zipf(get_matched_by(subj, "arg_1", self.safe_verbs), "verb"))
-            if V_agree["finite"] == "1":
-                if V_agree["3sg"] == "1":
-                    V_not_agree = choice(
-                        get_all_conjunctive([("pres", "1"), ("3sg", "0")], get_all("root", V_agree["root"])))
-                else:
-                    V_not_agree = choice(
-                        get_all_conjunctive([("pres", "1"), ("3sg", "1")], get_all("root", V_agree["root"])))
-            else:
-                V_not_agree = V_agree
+            V_not_agree = mismatching_nonpast_agreement_form(V_agree)
 
             try:
                 if subj["pl"] == "1":
