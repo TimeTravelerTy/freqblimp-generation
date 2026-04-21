@@ -7,6 +7,7 @@ from generation_projects.blimp.overlay_guards import (
     causative_alternating_verb_rows,
     dp_buildable_nominal_rows,
     filter_rows_for_active_zipf,
+    inchoative_bad_transitive_rows,
 )
 
 class Generator(data_generator.BenchmarkGenerator):
@@ -20,7 +21,7 @@ class Generator(data_generator.BenchmarkGenerator):
                          lexically_identical=False)
 
         self.alternating_verbs = causative_alternating_verb_rows()
-        self.non_alternating_transitives = get_all("strict_trans", "1", get_all("inchoative", "0", all_transitive_verbs))
+        self.non_alternating_transitives = inchoative_bad_transitive_rows()
         self.safe_nominals = dp_buildable_nominal_rows()
         self.all_singulars = get_all("sg", "1", self.safe_nominals)
         self.all_plurals = get_all("sg", "0", self.safe_nominals)
