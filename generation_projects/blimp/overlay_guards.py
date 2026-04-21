@@ -144,11 +144,16 @@ _DROP_ARGUMENT_BAD_VERBS = (
 
 _CAUSATIVE_ALTERNATING_VERBS = (
     # thermal / phase change
-    "bake", "burn", "char", "condense", "evaporate", "freeze", "liquefy",
-    "melt", "scorch", "soak", "solidify", "vaporize", "wash",
+    "acidify", "bake", "burn", "caramelize", "char", "coagulate", "condense",
+    "congeal", "curdle", "evaporate", "freeze", "liquefy", "melt", "overcook",
+    "parch", "scald", "scorch", "soak", "solidify", "vaporize", "wash",
     # mechanical / structural change
-    "chip", "crack", "crumple", "fade", "flatten", "fold", "fray", "loosen",
-    "shatter", "shrink", "stretch", "tighten", "twist", "unfold", "warp", "wrinkle",
+    "calcify", "cheapen", "chip", "crack", "crumple", "decouple", "discolor",
+    "dislocate", "distend", "entangle", "fade", "flatten", "fold", "fray",
+    "granulate", "homogenize", "loosen", "roughen", "shatter", "shrink",
+    "slacken", "smarten", "steepen", "stretch", "tighten", "twist", "unbuckle",
+    "unbutton", "uncoil", "unfasten", "unfold", "unhook", "unseal", "warp",
+    "wrinkle",
     # color / luminance change
     "blacken", "brighten", "darken", "dim",
     # motion / position change
@@ -181,6 +186,17 @@ _NUMBER_WORDS = {
     9: "nine",
     10: "ten",
 }
+_STRANDED_PREP_SUFFIXES = (
+    " with",
+    " for",
+    " to",
+    " from",
+    " at",
+    " on",
+    " in",
+    " about",
+    " of",
+)
 
 
 @dataclass(frozen=True)
@@ -305,28 +321,45 @@ def rows_matching_expressions(table, allowed_rows):
     return table[np.isin(np.asarray(table["expression"], dtype=str), allowed)]
 
 
-def _rows_for_expression_families(table, expressions: Sequence[str]):
-    families = []
+@lru_cache(maxsize=4096)
+def _expression_surface_variants(expression: str):
+    text = str(expression).strip().lower()
+    if not text:
+        return ()
+    pieces = text.split(" ", 1)
+    head = pieces[0]
+    suffix = pieces[1] if len(pieces) == 2 else ""
+    variants = {text}
+    try:
+        from lemminflect import getInflection
+    except Exception:
+        return tuple(sorted(variants))
+    for tag in ("VB", "VBP", "VBZ", "VBG", "VBD", "VBN"):
+        for form in getInflection(head, tag=tag) or ():
+            form = str(form).strip().lower()
+            if not form:
+                continue
+            variants.add("%s %s" % (form, suffix) if suffix else form)
+    return tuple(sorted(variants))
+
+
+def _rows_for_expression_families(table, expressions: Sequence[str], expand_inflections: bool=False):
+    normalized_expressions = set()
     for expression in expressions:
-        exact = get_all("expression", expression, table)
-        if len(exact) == 0:
-            continue
-        families.append(np.asarray(exact))
-        roots = {
-            str(row["root"]).strip()
-            for row in exact
-            if str(row["root"]).strip()
-        }
-        for root in roots:
-            family = get_all("root", root, table)
-            if len(family) > 0:
-                families.append(np.asarray(family))
-    if not families:
+        variants = _expression_surface_variants(expression) if expand_inflections else (expression,)
+        normalized_expressions.update(
+            str(variant).strip()
+            for variant in variants
+            if str(variant).strip()
+        )
+    if len(table) == 0 or not normalized_expressions:
         return np.array([], dtype=getattr(table, "dtype", None))
-    merged = families[0]
-    for family in families[1:]:
-        merged = np.union1d(merged, family)
-    return merged
+
+    expression_values = np.asarray(table["expression"], dtype=str)
+    exact_mask = np.isin(expression_values, sorted(normalized_expressions))
+    if not np.any(exact_mask):
+        return np.array([], dtype=getattr(table, "dtype", None))
+    return table[exact_mask]
 
 
 def _exclude_expression_families(table, expressions: Sequence[str]):
@@ -370,22 +403,22 @@ def adjective_rows_for_category(category_2: str):
 
 def subject_raising_verb_rows():
     rows = verb_rows_for_category("V_raising_subj")
-    return _rows_for_expression_families(rows, _SUBJECT_RAISING_VERBS)
+    return _rows_for_expression_families(rows, _SUBJECT_RAISING_VERBS, expand_inflections=True)
 
 
 def control_subject_verb_rows():
     rows = verb_rows_for_category("V_control_subj")
-    return _rows_for_expression_families(rows, _CONTROL_SUBJECT_VERBS)
+    return _rows_for_expression_families(rows, _CONTROL_SUBJECT_VERBS, expand_inflections=True)
 
 
 def object_raising_verb_rows():
     rows = verb_rows_for_category("V_raising_object")
-    return _rows_for_expression_families(rows, _OBJECT_RAISING_VERBS)
+    return _rows_for_expression_families(rows, _OBJECT_RAISING_VERBS, expand_inflections=True)
 
 
 def control_object_verb_rows():
     rows = verb_rows_for_category("V_control_object")
-    return _rows_for_expression_families(rows, _CONTROL_OBJECT_VERBS)
+    return _rows_for_expression_families(rows, _CONTROL_OBJECT_VERBS, expand_inflections=True)
 
 
 def subject_raising_adjective_rows():
@@ -418,12 +451,16 @@ def existential_bad_control_subject_verb_rows():
 
 
 def drop_argument_good_verb_rows():
-    return _rows_for_expression_families(get_all("strict_trans", "0"), _DROP_ARGUMENT_GOOD_VERBS)
+    rows = _rows_for_expression_families(get_all("verb", "1"), _DROP_ARGUMENT_GOOD_VERBS, expand_inflections=True)
+    return get_all("strict_trans", "0", rows)
 
 
 def drop_argument_bad_verb_rows():
-    rows = get_all("category", "(S\\NP)/NP")
-    return _rows_for_expression_families(rows, _DROP_ARGUMENT_BAD_VERBS)
+    return _rows_for_expression_families(
+        get_all("category", "(S\\NP)/NP"),
+        _DROP_ARGUMENT_BAD_VERBS,
+        expand_inflections=True,
+    )
 
 
 def causative_alternating_verb_rows():
@@ -433,8 +470,13 @@ def causative_alternating_verb_rows():
     excluding overlay verbs that incorrectly inherit causative/inchoative flags from
     unrelated base verbs (e.g. protrude inheriting from accelerate).
     """
-    all_rows = table_union1d(get_all("causative", "1"), get_all("inchoative", "1"))
-    return _rows_for_expression_families(all_rows, _CAUSATIVE_ALTERNATING_VERBS)
+    rows = _rows_for_expression_families(
+        get_all("verb", "1"),
+        _CAUSATIVE_ALTERNATING_VERBS,
+        expand_inflections=True,
+    )
+    filtered = table_union1d(get_all("causative", "1", rows), get_all("inchoative", "1", rows))
+    return filtered if len(filtered) > 0 else rows
 
 
 def requirement_from_text(*parts: Iterable[object]) -> Optional[str]:
@@ -461,6 +503,17 @@ def filter_nouns_for_requirement(table, req: Optional[str]):
     if req == "MASS":
         return get_all("mass", "1", table)
     return table
+
+
+def filter_stranded_preposition_verbs(table):
+    if len(table) == 0:
+        return table
+    expressions = np.asarray(table["expression"], dtype=str)
+    keep_mask = np.ones(len(expressions), dtype=bool)
+    for suffix in _STRANDED_PREP_SUFFIXES:
+        keep_mask &= ~np.char.endswith(expressions, suffix)
+    filtered = table[keep_mask]
+    return filtered if len(filtered) > 0 else table
 
 
 @lru_cache(maxsize=4096)

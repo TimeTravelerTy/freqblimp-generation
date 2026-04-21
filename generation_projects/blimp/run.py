@@ -4,11 +4,16 @@ import importlib
 import inspect
 import json
 import os
+import re
 import time
 import traceback
 from pathlib import Path
 
 from utils.randomize import SamplingPolicy, configure_sampling_policy, set_trace_recording_enabled
+
+
+_DECLARED_UID_CACHE = {}
+_DECLARED_UID_PATTERN = re.compile(r"""uid\s*=\s*['"]([^'"]+)['"]""")
 
 
 def _data_generator_module():
@@ -45,6 +50,32 @@ def _available_uids():
         for path in root.glob("*.py")
         if path.stem not in ignored
     )
+
+
+def _declared_uid_for_module(uid):
+    if uid not in _DECLARED_UID_CACHE:
+        declared_uid = uid
+        module_path = Path(__file__).resolve().parent / ("%s.py" % uid)
+        try:
+            text = module_path.read_text()
+        except Exception:
+            text = ""
+        match = _DECLARED_UID_PATTERN.search(text)
+        if match:
+            declared_uid = match.group(1)
+        _DECLARED_UID_CACHE[uid] = declared_uid
+    return _DECLARED_UID_CACHE[uid]
+
+
+def _predicted_output_path(uid, config):
+    if config["output_path"]:
+        return config["output_path"]
+    output_dir = Path(config["output_dir"])
+    return str(output_dir / ("%s.jsonl" % _declared_uid_for_module(uid)))
+
+
+def _is_nonempty_output(path):
+    return bool(path) and os.path.exists(path) and os.path.getsize(path) > 0
 
 
 def _runtime_config_from_args(args):
@@ -138,11 +169,20 @@ def _build_generator(module):
 
 def _run_uid(uid, config):
     started = time.time()
+    predicted_output_path = _predicted_output_path(uid, config)
+    if config.get("skip_existing") and _is_nonempty_output(predicted_output_path):
+        print("[skip-existing] %s: %s (%d bytes)" % (uid, predicted_output_path, os.path.getsize(predicted_output_path)))
+        return {
+            "uid": uid,
+            "status": "skipped",
+            "duration_seconds": round(time.time() - started, 3),
+            "output_path": predicted_output_path,
+        }
     module = importlib.import_module("generation_projects.blimp.%s" % uid)
     configure_sampling_policy(_policy_from_config(config))
     generator = _build_generator(module)
     if config["output_path"]:
-        if config.get("skip_existing") and os.path.exists(config["output_path"]) and os.path.getsize(config["output_path"]) > 0:
+        if config.get("skip_existing") and _is_nonempty_output(config["output_path"]):
             print("[skip-existing] %s: %s (%d bytes)" % (uid, config["output_path"], os.path.getsize(config["output_path"])))
             return {
                 "uid": uid,
@@ -160,7 +200,7 @@ def _run_uid(uid, config):
     output_dir = Path(config["output_dir"])
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = str(output_dir / ("%s.jsonl" % generator.uid))
-    if config.get("skip_existing") and os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+    if config.get("skip_existing") and _is_nonempty_output(output_path):
         print("[skip-existing] %s: %s (%d bytes)" % (uid, output_path, os.path.getsize(output_path)))
         return {
             "uid": uid,

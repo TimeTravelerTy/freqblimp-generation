@@ -5,6 +5,7 @@ from utils.randomize import choice
 
 from generation_projects.blimp.overlay_guards import (
     causative_alternating_verb_rows,
+    filter_stranded_preposition_verbs,
     filter_rows_for_active_zipf,
 )
 
@@ -81,6 +82,7 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
                 "verb",
                 fallback_on_empty=False,
             )
+            bad_candidates = filter_stranded_preposition_verbs(bad_candidates)
             if len(bad_candidates) == 0:
                 continue
             V_intrans = choice(bad_candidates)
