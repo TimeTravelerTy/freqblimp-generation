@@ -67,3 +67,8 @@ Single commit "Zipf-filter all constrainable slots + perf fixes for full 3-regim
 
 - Head: gemma-4-E4B lp=0.7039, Llama-3.1-8B lp=0.7167, Mistral-7B lp=0.7264
 - Tail: gemma-4-E4B lp=0.6997, Llama-3.1-8B lp=0.7106, Mistral-7B lp=0.7340
+
+## BLiMP Paper Scope Note
+
+- Treat `coordinate_structure_constraint_subject_extraction` and `wh_questions_object_gap_long_distance` as extra paradigms that are present in this repo's 69-file generation set but not in the 67-subtask reference used in `blimp-rare` / the BLiMP-paper scope.
+- For paper-scope comparisons, QC, and eval summaries, default to the 67-subtask set unless the user explicitly wants the extra two included.
