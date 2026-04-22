@@ -5,6 +5,7 @@ from utils.randomize import choice, uniform_choice
 
 from generation_projects.blimp.overlay_guards import (
     causative_alternating_verb_rows,
+    causative_bad_intransitive_rows,
     dp_buildable_nominal_rows,
     filter_rows_for_active_zipf,
 )
@@ -20,7 +21,7 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
                          lexically_identical=False)
 
         self.alternating_verbs = causative_alternating_verb_rows()
-        self.non_alternating_intransitives = get_all("causative", "0", all_intransitive_verbs)
+        self.non_alternating_intransitives = causative_bad_intransitive_rows()
         self.safe_nominals = dp_buildable_nominal_rows()
         self.all_singulars = get_all("sg", "1", self.safe_nominals)
         self.all_plurals = get_all("sg", "0", self.safe_nominals)

@@ -24,6 +24,9 @@ class Generator(data_generator.BenchmarkGenerator):
             self.en_verbs,
         )
         self.transitive = get_all("passive", "1", self.en_verbs)
+        transitive_exprs = set(map(str, self.transitive["expression"]))
+        keep_mask = ~np.isin(np.asarray(self.intransitive["expression"], dtype=str), list(transitive_exprs))
+        self.intransitive = self.intransitive[keep_mask]
         self.max_sample_attempts = 512
 
     def sample(self):

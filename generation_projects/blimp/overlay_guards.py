@@ -97,6 +97,13 @@ _TOUGH_ADJECTIVES = (
     "invigorating", "uplifting", "edifying", "fruitless", "futile",
 )
 
+_FINITE_CLAUSE_EMBEDDING_VERBS = (
+    "admit", "agree", "argue", "assert", "believe", "claim", "conclude",
+    "confess", "deny", "discover", "explain", "feel", "forget", "imagine",
+    "know", "realize", "recall", "remember", "reveal", "say", "suspect",
+    "think",
+)
+
 _EXISTENTIAL_CONTROL_SUBJECT_EXCLUDED_VERBS = (
     "continue", "fail", "need",
 )
@@ -108,25 +115,10 @@ _DROP_ARGUMENT_GOOD_VERBS = (
     "hinder", "investigate", "know", "leave", "love", "observe", "pass",
     "purchase", "remember", "run around", "see", "sell", "skate around",
     "tour", "visit", "watch",
-    # high-frequency absolute-use verbs added to base vocab (strict_trans → 0)
-    "draw", "drink", "eat", "grow", "ride", "sing", "teach", "write",
-    # additional verbs confirmed in overlay vocabulary with strict_trans=0
-    # investigation / analysis
-    "analyse", "analyze", "annotate", "assess", "audit", "calibrate",
-    "classify", "configure", "debug", "diagnose", "document", "evaluate",
-    "inspect", "monitor", "proofread", "register", "scrutinize", "sort",
-    "track", "transcribe",
-    # cleaning / maintenance
-    "buff", "disinfect", "insulate", "lubricate", "polish", "scrub",
-    "shellac", "sterilize", "trim",
-    # agriculture / horticulture
-    "cultivate", "plant", "reap", "weed",
-    # crafts / trade / provisioning
-    "garnish", "hoard", "marinate", "peddle", "pluck", "procure",
-    "salvage", "scavenge", "season", "stockpile",
-    # administration / services
-    "advertise", "allocate", "counsel", "educate", "excavate", "import",
-    "instruct", "post", "prepare", "quarry", "supervise", "treat",
+    # conservative extensions that still allow robust absolute-use readings
+    "advertise", "buff", "cultivate", "draw", "drink", "eat", "peddle",
+    "plant", "polish", "prepare", "reap", "ride", "scrub", "season",
+    "sing", "teach", "treat", "trim", "weed", "write",
 )
 
 _DROP_ARGUMENT_BAD_VERBS = (
@@ -169,6 +161,11 @@ _CAUSATIVE_ALTERNATING_VERBS = (
     "maneuver", "marry", "reunite", "steer", "train",
     # other
     "benefit", "worry",
+)
+
+_CAUSATIVE_BAD_EXTRA_INTRANSITIVES = (
+    "appear", "disappear", "emerge", "exist", "happen", "occur", "remain",
+    "vanish",
 )
 
 COUNT_TRIGGERS = {
@@ -500,6 +497,14 @@ def drop_argument_bad_verb_rows():
     )
 
 
+def finite_clause_embedding_verb_rows():
+    return _rows_for_expression_families(
+        get_all("category_2", "V_embedding"),
+        _FINITE_CLAUSE_EMBEDDING_VERBS,
+        expand_inflections=True,
+    )
+
+
 def inchoative_bad_transitive_rows():
     rows = get_all("category", "(S\\NP)/NP", get_all("verb", "1"))
     # Keep only plain transitive surface forms; PP/particle verbs are excluded
@@ -525,6 +530,24 @@ def causative_alternating_verb_rows():
     )
     filtered = table_union1d(get_all("causative", "1", rows), get_all("inchoative", "1", rows))
     return filtered if len(filtered) > 0 else rows
+
+
+def causative_bad_intransitive_rows():
+    rows = get_all("category", "S\\NP", get_all("verb", "1"))
+    strict_rows = get_all("strict_intrans", "1", rows)
+    extra_rows = _rows_for_expression_families(
+        rows,
+        _CAUSATIVE_BAD_EXTRA_INTRANSITIVES,
+        expand_inflections=True,
+    )
+    combined = table_union1d(strict_rows, extra_rows)
+    alternating_roots = set(map(str, causative_alternating_verb_rows()["root"]))
+    transitive_exprs = set(
+        map(str, get_all("category", "(S\\NP)/NP", get_all("verb", "1"))["expression"])
+    )
+    keep_mask = ~np.isin(np.asarray(combined["root"], dtype=str), list(alternating_roots))
+    keep_mask &= ~np.isin(np.asarray(combined["expression"], dtype=str), list(transitive_exprs))
+    return combined[keep_mask]
 
 
 def requirement_from_text(*parts: Iterable[object]) -> Optional[str]:

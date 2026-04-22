@@ -3,6 +3,8 @@ from utils.constituent_building import *
 from utils.conjugate import *
 from utils.randomize import choice
 
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+
 class Generator(data_generator.BenchmarkGenerator):
     def __init__(self):
         super().__init__(field="syntax",
@@ -13,7 +15,12 @@ class Generator(data_generator.BenchmarkGenerator):
                          two_prefix_method=False,
                          lexically_identical=False)
 
+        self.intransitive_verbs = get_all("category", "S\\NP", all_intransitive_verbs)
         self.strict_transitive = get_all("strict_trans", "1", all_transitive_verbs)
+        intransitive_exprs = set(map(str, self.intransitive_verbs["expression"]))
+        keep_mask = ~np.isin(np.asarray(self.strict_transitive["expression"], dtype=str), list(intransitive_exprs))
+        self.strict_transitive = self.strict_transitive[keep_mask]
+        self.max_sample_attempts = 512
 
     def sample(self):
         # The bear has slept.
@@ -21,10 +28,30 @@ class Generator(data_generator.BenchmarkGenerator):
         # The bear has injured.
         # Subj     Aux V_trans
 
-        V_intrans = choice(all_intransitive_verbs)
-        Subj = N_to_DP_mutate(choice(get_matches_of(V_intrans, "arg_1", all_nominals)))
-        Aux = return_aux(V_intrans, Subj)
-        V_trans = choice(get_matched_by(Subj, "arg_1", get_matches_of(Aux, "arg_2", self.strict_transitive)))
+        verb_pool = filter_rows_for_active_zipf(self.intransitive_verbs, "verb", fallback_on_empty=False)
+        if len(verb_pool) == 0:
+            raise LexicalGapError("No regime-compatible intransitive verbs")
+
+        for _ in range(self.max_sample_attempts):
+            V_intrans = choice(verb_pool)
+            subj_pool = filter_rows_for_active_zipf(
+                get_matches_of(V_intrans, "arg_1", all_nominals), "noun", fallback_on_empty=False
+            )
+            if len(subj_pool) == 0:
+                continue
+            Subj = N_to_DP_mutate(choice(subj_pool))
+            Aux = return_aux(V_intrans, Subj)
+            bad_pool = filter_rows_for_active_zipf(
+                get_matched_by(Subj, "arg_1", get_matches_of(Aux, "arg_2", self.strict_transitive)),
+                "verb",
+                fallback_on_empty=False,
+            )
+            if len(bad_pool) == 0:
+                continue
+            V_trans = choice(bad_pool)
+            break
+        else:
+            raise LexicalGapError("No regime-compatible intransitive pair found after bounded retries")
 
         data = {
             "sentence_good": "%s %s %s." % (Subj[0], Aux[0], V_intrans[0]),

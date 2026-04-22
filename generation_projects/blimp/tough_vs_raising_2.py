@@ -22,6 +22,7 @@ class Generator(data_generator.BenchmarkGenerator):
         self.tough_preds = np.setdiff1d(tough_adjective_rows(), get_all("expression", "ready"))
         self.safe_verbs = np.setdiff1d(all_bare_verbs,
                                        np.union1d(get_all("causative", "1"), get_all("strict_intrans", "0")))
+        self.max_sample_attempts = 128
 
     def sample(self):
         # The hamburger is likely     to taste good
@@ -29,12 +30,19 @@ class Generator(data_generator.BenchmarkGenerator):
         # The hamburger is tough    to taste good
         # Subj          be A_tough  TO VP
 
-        A_tough = choice(self.tough_preds)
-        A_raising = choice(self.raising_preds)
-        V = choice(self.safe_verbs)
-        VP = V_to_VP_mutate(V, aux=False)
-        subj = N_to_DP_mutate(choice(get_matches_of(V, "arg_1")))
-        be = return_copula(subj)
+        for _ in range(self.max_sample_attempts):
+            A_tough = choice(self.tough_preds)
+            A_raising = choice(self.raising_preds)
+            V = choice(self.safe_verbs)
+            VP = V_to_VP_mutate(V, aux=False)
+            vp_toks = VP[0].split()
+            if len(vp_toks) >= 3 and vp_toks[0] == vp_toks[2] and vp_toks[1] == "to":
+                continue
+            subj = N_to_DP_mutate(choice(get_matches_of(V, "arg_1")))
+            be = return_copula(subj)
+            break
+        else:
+            raise LexicalGapError("No non-degenerate tough_vs_raising_2 sample found after bounded retries")
 
         data = {
             "sentence_good": "%s %s %s to %s." % (subj[0], be[0], A_raising[0], VP[0]),
