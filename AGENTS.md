@@ -6,6 +6,13 @@
 - Before adding new overlay-facing generator logic, avoid patterns that materialize and cache large per-candidate arrays inside scans. Prefer capped scans, label-index checks, and reusable cached indices.
 - If memory behavior must be investigated, start with source inspection and artifact sizes before running Python that imports overlay assets.
 
+# TSUBAME SSH Notes
+
+- In Codex desktop, run TSUBAME shell commands with `exec_command(..., login=false)` when possible. Login-shell startup can hang and make `ssh tsubame ...` look broken even when the remote host is fine.
+- Prefer one normal `ssh tsubame '...'` call at a time for queue/log polling. Parallel SSH polls and wrapped `BatchMode`/TTY retries were less reliable than a single direct call.
+- For copying many remote result files back locally, avoid broad quoted `scp` wildcards. Use explicit file lists or a `ssh tsubame 'tar -cf - ...' | tar -xf -` stream.
+- If a copied JSONL looks truncated locally, recopy that single file explicitly before analyzing it.
+
 # Session Handoff (2026-04-20, continued)
 
 ## What Was Committed This Session (5db47fe)

@@ -13,6 +13,7 @@ from generation_projects.blimp.overlay_guards import (
     filter_plural_looking_singular_nouns,
     filter_rows_for_active_zipf,
     overlay_enabled,
+    rows_matching_inflection,
     rows_matching_expressions,
     subject_raising_verb_rows,
     subject_raising_adjective_rows,
@@ -45,6 +46,10 @@ class Generator(data_generator.BenchmarkGenerator):
         self.control_preds = tuple(curated_template_expressions("Adj_control_subj"))
         self.max_sample_attempts = 512
 
+    def _surface_sentence(self, aux, predicate, determiner, emb_subj, vp):
+        text = remove_extra_whitespace(f"There {aux[0]} {predicate} to be {determiner[0]} {emb_subj[0]} {vp[0]}")
+        return text + "."
+
     def sample(self):
         # There does seem    to be a dog      eating an apple.
         # THERE aux  raising TO BE D emb_subj VP
@@ -71,26 +76,25 @@ class Generator(data_generator.BenchmarkGenerator):
             verbal_predicate = choice([True, False])
             if verbal_predicate:
                 # Curated control verbs — fallback_on_empty=True so xtail falls back to full curated list
-                control_candidates = rows_matching_expressions(self.control_verbs, agree_verbs)
+                control_candidates = table_intersect1d(self.control_verbs, agree_verbs)
                 control_candidates = filter_rows_for_active_zipf(control_candidates, "verb", fallback_on_empty=True)
                 if len(control_candidates) == 0:
                     raise LexicalGapError("No compatible control-subject verbs for agreement class")
-                control = choice(control_candidates)
-                aux = return_aux(control, emb_subj, allow_negated=allow_negated)
-                control = control[0]
+                control_row = choice(control_candidates)
+                aux = return_aux(control_row, emb_subj, allow_negated=allow_negated)
+                control = control_row[0]
             else:
                 control_row = choice(self.control_pred_rows) if overlay_enabled() and len(self.control_pred_rows) > 0 else None
                 control = control_row[0] if control_row is not None else choice(self.control_preds)
                 aux = return_copula(emb_subj, allow_negated=allow_negated)
 
             if verbal_predicate:
-                # Curated raising verbs — fallback_on_empty=True so xtail falls back to full curated list
-                raising_candidates = rows_matching_expressions(self.raising_verbs, get_matches_of(aux, "arg_2", agree_verbs))
+                # Keep the good-side verbal predicate in the same inflectional shape as the sampled bad-side control verb.
+                raising_candidates = rows_matching_inflection(self.raising_verbs, control_row)
                 raising_candidates = filter_rows_for_active_zipf(raising_candidates, "verb", fallback_on_empty=True)
                 if len(raising_candidates) == 0:
                     raise LexicalGapError("No compatible subject-raising verbs for auxiliary/agreement class")
-                raising = choice(raising_candidates)
-                raising = raising[0]
+                raising = choice(raising_candidates)[0]
             else:
                 raising_row = choice(self.raising_pred_rows) if overlay_enabled() and len(self.raising_pred_rows) > 0 else None
                 raising = raising_row[0] if raising_row is not None else choice(self.raising_preds)
@@ -109,8 +113,8 @@ class Generator(data_generator.BenchmarkGenerator):
             raise LexicalGapError("No xtail-compatible existential_there_subject_raising sample after bounded retries")
 
         data = {
-            "sentence_good": "There %s %s to be %s %s %s." % (aux[0], raising, D[0], emb_subj[0], VP[0]),
-            "sentence_bad": "There %s %s to be %s %s %s." % (aux[0], control, D[0], emb_subj[0], VP[0]),
+            "sentence_good": self._surface_sentence(aux, raising, D, emb_subj, VP),
+            "sentence_bad": self._surface_sentence(aux, control, D, emb_subj, VP),
         }
         return data, data["sentence_good"]
 

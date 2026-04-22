@@ -3,7 +3,7 @@ from utils.constituent_building import *
 from utils.conjugate import *
 from utils.randomize import choice
 
-from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+from generation_projects.blimp.overlay_guards import dp_buildable_nominal_rows, filter_rows_for_active_zipf
 
 class Generator(data_generator.BenchmarkGenerator):
     def __init__(self):
@@ -15,12 +15,17 @@ class Generator(data_generator.BenchmarkGenerator):
                          two_prefix_method=False,
                          lexically_identical=False)
 
-        self.intransitive_verbs = get_all("category", "S\\NP", all_intransitive_verbs)
+        self.intransitive_verbs = get_all_conjunctive([("category", "S\\NP"), ("strict_intrans", "1")], all_verbs)
         self.strict_transitive = get_all("strict_trans", "1", all_transitive_verbs)
         intransitive_exprs = set(map(str, self.intransitive_verbs["expression"]))
         keep_mask = ~np.isin(np.asarray(self.strict_transitive["expression"], dtype=str), list(intransitive_exprs))
         self.strict_transitive = self.strict_transitive[keep_mask]
+        self.safe_subjects = dp_buildable_nominal_rows()
         self.max_sample_attempts = 512
+
+    def _surface_sentence(self, subj, aux, verb):
+        text = remove_extra_whitespace(f"{subj[0]} {aux[0]} {verb[0]}")
+        return text[0].upper() + text[1:] + "."
 
     def sample(self):
         # The bear has slept.
@@ -35,7 +40,7 @@ class Generator(data_generator.BenchmarkGenerator):
         for _ in range(self.max_sample_attempts):
             V_intrans = choice(verb_pool)
             subj_pool = filter_rows_for_active_zipf(
-                get_matches_of(V_intrans, "arg_1", all_nominals), "noun", fallback_on_empty=False
+                get_matches_of(V_intrans, "arg_1", self.safe_subjects), "noun", fallback_on_empty=False
             )
             if len(subj_pool) == 0:
                 continue
@@ -54,8 +59,8 @@ class Generator(data_generator.BenchmarkGenerator):
             raise LexicalGapError("No regime-compatible intransitive pair found after bounded retries")
 
         data = {
-            "sentence_good": "%s %s %s." % (Subj[0], Aux[0], V_intrans[0]),
-            "sentence_bad": "%s %s %s." % (Subj[0], Aux[0], V_trans[0])
+            "sentence_good": self._surface_sentence(Subj, Aux, V_intrans),
+            "sentence_bad": self._surface_sentence(Subj, Aux, V_trans),
         }
         return data, data["sentence_good"]
 

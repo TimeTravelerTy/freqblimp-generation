@@ -4,6 +4,7 @@ from utils.conjugate import *
 from utils.randomize import choice
 
 from generation_projects.blimp.overlay_guards import (
+    dp_buildable_nominal_rows,
     drop_argument_bad_verb_rows,
     drop_argument_good_verb_rows,
     filter_rows_for_active_zipf,
@@ -21,7 +22,12 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
 
         self.drop_arg_transitive = drop_argument_good_verb_rows()
         self.drop_arg_bad_transitive = drop_argument_bad_verb_rows()
+        self.safe_subjects = dp_buildable_nominal_rows()
         self.max_sample_attempts = 512
+
+    def _surface_sentence(self, subj, aux, verb):
+        text = remove_extra_whitespace(f"{subj[0]} {aux[0]} {verb[0]}")
+        return text[0].upper() + text[1:] + "."
 
     def sample(self):
         # The bear has attacked.
@@ -36,7 +42,7 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
         for _ in range(self.max_sample_attempts):
             V_non_strict = choice(verb_pool)
             subj_pool = filter_rows_for_active_zipf(
-                get_matches_of(V_non_strict, "arg_1", all_nominals), "noun", fallback_on_empty=False
+                get_matches_of(V_non_strict, "arg_1", self.safe_subjects), "noun", fallback_on_empty=False
             )
             if len(subj_pool) == 0:
                 continue
@@ -55,8 +61,8 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
             raise LexicalGapError("No xtail-compatible drop_argument pair found after bounded retries")
 
         data = {
-            "sentence_good": "%s %s %s." % (Subj[0], Aux[0], V_non_strict[0]),
-            "sentence_bad": "%s %s %s." % (Subj[0], Aux[0], V_strict[0])
+            "sentence_good": self._surface_sentence(Subj, Aux, V_non_strict),
+            "sentence_bad": self._surface_sentence(Subj, Aux, V_strict),
         }
         return data, data["sentence_good"]
 

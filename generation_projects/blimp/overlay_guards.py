@@ -115,10 +115,6 @@ _DROP_ARGUMENT_GOOD_VERBS = (
     "hinder", "investigate", "know", "leave", "love", "observe", "pass",
     "purchase", "remember", "run around", "see", "sell", "skate around",
     "tour", "visit", "watch",
-    # conservative extensions that still allow robust absolute-use readings
-    "advertise", "buff", "cultivate", "draw", "drink", "eat", "peddle",
-    "plant", "polish", "prepare", "reap", "ride", "scrub", "season",
-    "sing", "teach", "treat", "trim", "weed", "write",
 )
 
 _DROP_ARGUMENT_BAD_VERBS = (

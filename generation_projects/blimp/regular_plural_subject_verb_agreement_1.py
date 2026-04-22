@@ -1,11 +1,16 @@
+import random
+
 from utils import data_generator
 from utils.constituent_building import *
-from utils.conjugate import *
+from utils.exceptions import LexicalGapError
 from utils.randomize import choice
-from functools import reduce
 from utils.vocab_sets import *
 
-from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf, build_agreement_safe_verbs
+from generation_projects.blimp.overlay_guards import (
+    build_agreement_safe_verbs,
+    filter_rows_for_active_zipf,
+    mismatching_nonpast_agreement_form,
+)
 
 class AgreementGenerator(data_generator.BenchmarkGenerator):
     def __init__(self):
@@ -16,47 +21,117 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
                          one_prefix_method=True,
                          two_prefix_method=False,
                          lexically_identical=False)
-        self.all_reg_nouns = get_all_conjunctive([("category", "N"), ("irrpl", "")])
-        self.safe_verbs = build_agreement_safe_verbs()
+        safe_verbs = np.intersect1d(build_agreement_safe_verbs(), all_non_recursive_verbs)
+        self.present_verbs = get_all("pres", "1", safe_verbs)
+        self.ing_verbs = get_all("ing", "1", safe_verbs)
+        self.en_verbs = get_all("en", "1", safe_verbs)
+        singular_common = get_all_conjunctive([("category", "N"), ("sg", "1"), ("mass", "0")], all_common_nouns)
+        plural_common = get_all_conjunctive([("category", "N"), ("pl", "1"), ("mass", "0")], all_common_nouns)
+        self.singular_subjects = np.union1d(all_proper_names, singular_common)
+        self.plural_subjects = plural_common
+        self.progressive_aux_pairs = [
+            ("is", "are"),
+            ("isn't", "aren't"),
+            ("was", "were"),
+            ("wasn't", "weren't"),
+        ]
+        self.perfect_aux_pairs = [
+            ("has", "have"),
+            ("hasn't", "haven't"),
+        ]
+
+    def _subject_pool(self, verb, number):
+        subject_space = self.singular_subjects if number == "sg" else self.plural_subjects
+        return filter_rows_for_active_zipf(
+            get_matches_of(verb, "arg_1", subject_space),
+            "noun",
+            fallback_on_empty=False,
+        )
+
+    def _pick_subject(self, verb, number):
+        subj = widen_expression_field(choice(self._subject_pool(verb, number)))
+        if subj["properNoun"] == "1" or subj["category"] == "NP":
+            realized = subj
+        else:
+            realized = N_to_DP_mutate(subj)
+        surface = remove_extra_whitespace(realized[0])
+        realized[0] = surface[0].upper() + surface[1:]
+        return realized
+
+    def _args_for(self, verb, subj):
+        args = verb_args_from_verb(
+            verb,
+            subj=subj,
+            aux=False,
+            allow_modal=False,
+            allow_negated=False,
+        )["args"]
+        return join_args(args)
+
+    def _format_sentence(self, subj, first_word, verb, args):
+        pieces = [subj[0], first_word]
+        if verb:
+            pieces.append(verb[0])
+        if args:
+            pieces.append(args)
+        return remove_extra_whitespace(" ".join(pieces)) + "."
 
     def sample(self):
-        # The cat is        eating     food
-        #     N1  aux_agree V1_agree   N2
-        # The cat are          eating        food
-        #     N1  aux_nonagree V1_nonagree   N2
+        for _ in range(256):
+            family = random.choice(("lexical", "progressive", "perfect"))
+            number = random.choice(("sg", "pl"))
 
-        if random.choice([True, False]):
-            V1_agree = choice(filter_rows_for_active_zipf(np.intersect1d(self.safe_verbs, all_transitive_verbs), "verb"))
-        else:
-            V1_agree = choice(filter_rows_for_active_zipf(np.intersect1d(self.safe_verbs, all_transitive_verbs), "verb"))
-        N1 = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V1_agree, "arg_1", self.all_reg_nouns), "noun")))
+            try:
+                if family == "lexical":
+                    verb_seed = choice(filter_rows_for_active_zipf(self.present_verbs, "verb", fallback_on_empty=False))
+                    other_form = mismatching_nonpast_agreement_form(verb_seed)
+                    if verb_seed["3sg"] == "1":
+                        singular_verb, plural_verb = verb_seed, other_form
+                    else:
+                        singular_verb, plural_verb = other_form, verb_seed
+                    subj = self._pick_subject(singular_verb if number == "sg" else plural_verb, number)
+                    args = self._args_for(singular_verb if number == "sg" else plural_verb, subj)
+                    good_verb = singular_verb if number == "sg" else plural_verb
+                    bad_verb = plural_verb if number == "sg" else singular_verb
+                    word_good = good_verb[0].split(" ")[0]
+                    word_bad = bad_verb[0].split(" ")[0]
+                    sentence_good = self._format_sentence(subj, good_verb[0], None, args)
+                    sentence_bad = self._format_sentence(subj, bad_verb[0], None, args)
+                elif family == "progressive":
+                    verb = choice(filter_rows_for_active_zipf(self.ing_verbs, "verb", fallback_on_empty=False))
+                    subj = self._pick_subject(verb, number)
+                    args = self._args_for(verb, subj)
+                    singular_aux, plural_aux = random.choice(self.progressive_aux_pairs)
+                    good_aux = singular_aux if number == "sg" else plural_aux
+                    bad_aux = plural_aux if number == "sg" else singular_aux
+                    word_good = good_aux
+                    word_bad = bad_aux
+                    sentence_good = self._format_sentence(subj, good_aux, verb, args)
+                    sentence_bad = self._format_sentence(subj, bad_aux, verb, args)
+                else:
+                    verb = choice(filter_rows_for_active_zipf(self.en_verbs, "verb", fallback_on_empty=False))
+                    subj = self._pick_subject(verb, number)
+                    args = self._args_for(verb, subj)
+                    singular_aux, plural_aux = random.choice(self.perfect_aux_pairs)
+                    good_aux = singular_aux if number == "sg" else plural_aux
+                    bad_aux = plural_aux if number == "sg" else singular_aux
+                    word_good = good_aux
+                    word_bad = bad_aux
+                    sentence_good = self._format_sentence(subj, good_aux, verb, args)
+                    sentence_bad = self._format_sentence(subj, bad_aux, verb, args)
+            except LexicalGapError:
+                continue
 
-        if V1_agree["pres"] == "1":
-            V1_nonagree = get_mismatch_verb(V1_agree)
-        else:
-            V1_nonagree = V1_agree
+            data = {
+                "sentence_good": sentence_good,
+                "sentence_bad": sentence_bad,
+                "one_prefix_prefix": subj[0],
+                "one_prefix_word_good": word_good,
+                "one_prefix_word_bad": word_bad,
+            }
+            return data, data["sentence_good"]
 
-        args = join_args(verb_args_from_verb(V1_agree, aux=False)["args"])
-
-        auxes = require_aux_agree(V1_agree, N1)
-        aux_agree = auxes["aux_agree"]
-        aux_nonagree = auxes["aux_nonagree"]
-
-        if aux_agree == "":
-            word_agree = V1_agree[0].strip().split(" ")[0]
-            word_nonagree = V1_nonagree[0].strip().split(" ")[0]
-        else:
-            word_agree = aux_agree
-            word_nonagree = aux_nonagree
-
-        data = {
-            "sentence_good": "%s %s %s %s." % (N1[0], aux_agree, V1_agree[0], args),
-            "sentence_bad": "%s %s %s %s." % (N1[0], aux_nonagree, V1_nonagree[0], args),
-            "one_prefix_prefix": "%s" % (N1[0]),
-            "one_prefix_word_good": word_agree,
-            "one_prefix_word_bad": word_nonagree
-        }
-        return data, data["sentence_good"]
+        raise LexicalGapError("No regular_plural_subject_verb_agreement_1 sample found after bounded retries")
 
 
 def build_generator():
