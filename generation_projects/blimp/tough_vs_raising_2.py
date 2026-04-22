@@ -6,6 +6,7 @@ from utils.randomize import choice
 from generation_projects.blimp.overlay_guards import (
     subject_raising_adjective_rows,
     tough_adjective_rows,
+    tough_vs_raising_2_outer_verb_rows,
 )
 
 class Generator(data_generator.BenchmarkGenerator):
@@ -20,8 +21,7 @@ class Generator(data_generator.BenchmarkGenerator):
 
         self.raising_preds = subject_raising_adjective_rows()
         self.tough_preds = np.setdiff1d(tough_adjective_rows(), get_all("expression", "ready"))
-        self.safe_verbs = np.setdiff1d(all_bare_verbs,
-                                       np.union1d(get_all("causative", "1"), get_all("strict_intrans", "0")))
+        self.safe_verbs = tough_vs_raising_2_outer_verb_rows()
         self.max_sample_attempts = 128
 
     def sample(self):

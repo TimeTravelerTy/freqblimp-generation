@@ -98,10 +98,10 @@ _TOUGH_ADJECTIVES = (
 )
 
 _FINITE_CLAUSE_EMBEDDING_VERBS = (
-    "admit", "agree", "argue", "assert", "believe", "claim", "conclude",
-    "confess", "deny", "discover", "explain", "feel", "forget", "imagine",
-    "know", "realize", "recall", "remember", "reveal", "say", "suspect",
-    "think",
+    "admit", "argue", "assert", "believe", "claim", "confess", "conclude",
+    "deny", "discover", "explain", "feel", "forget", "hope", "imagine",
+    "know", "learn", "notice", "remember", "reveal", "say", "think",
+    "whisper",
 )
 
 _EXISTENTIAL_CONTROL_SUBJECT_EXCLUDED_VERBS = (
@@ -503,6 +503,20 @@ def finite_clause_embedding_verb_rows():
         _FINITE_CLAUSE_EMBEDDING_VERBS,
         expand_inflections=True,
     )
+
+
+def tough_vs_raising_2_outer_verb_rows():
+    bare_verbs = get_all("bare", "1", get_all("verb", "1"))
+    simple_iv = get_all("category", "S\\NP", bare_verbs)
+    simple_tv = get_all("category", "(S\\NP)/NP", bare_verbs)
+    subj_control = get_all("category", "(S\\NP)/(S[to]\\NP)", bare_verbs)
+    obj_control = get_all("category", "((S\\NP)/(S[to]/NP))/NP", bare_verbs)
+    infinitival_clause = get_all("category", "(S\\NP)/S[to]", bare_verbs)
+    rows = table_union1d(
+        table_union1d(simple_iv, simple_tv),
+        table_union1d(subj_control, table_union1d(obj_control, infinitival_clause)),
+    )
+    return table_setdiff1d(rows, get_all("causative", "1", rows))
 
 
 def inchoative_bad_transitive_rows():
