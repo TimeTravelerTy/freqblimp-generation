@@ -4,6 +4,8 @@ from utils.conjugate import *
 from utils.randomize import choice
 
 from generation_projects.blimp.overlay_guards import (
+    dp_buildable_nominal_rows,
+    filter_rows_for_active_zipf,
     subject_raising_adjective_rows,
     tough_adjective_rows,
     tough_vs_raising_2_outer_verb_rows,
@@ -22,6 +24,8 @@ class Generator(data_generator.BenchmarkGenerator):
         self.raising_preds = subject_raising_adjective_rows()
         self.tough_preds = np.setdiff1d(tough_adjective_rows(), get_all("expression", "ready"))
         self.safe_verbs = tough_vs_raising_2_outer_verb_rows()
+        self.safe_nominals = dp_buildable_nominal_rows()
+        self.safe_nominals = table_setdiff1d(self.safe_nominals, get_all("expression", "hasidim", self.safe_nominals))
         self.max_sample_attempts = 128
 
     def sample(self):
@@ -30,15 +34,30 @@ class Generator(data_generator.BenchmarkGenerator):
         # The hamburger is tough    to taste good
         # Subj          be A_tough  TO VP
 
+        verb_pool = filter_rows_for_active_zipf(self.safe_verbs, "verb", fallback_on_empty=False)
+        if len(verb_pool) == 0:
+            raise LexicalGapError("No regime-compatible tough_vs_raising_2 verbs")
+
         for _ in range(self.max_sample_attempts):
             A_tough = choice(self.tough_preds)
             A_raising = choice(self.raising_preds)
-            V = choice(self.safe_verbs)
-            VP = V_to_VP_mutate(V, aux=False)
+            V = choice(verb_pool)
+            subj_pool = filter_rows_for_active_zipf(
+                get_matches_of(V, "arg_1", self.safe_nominals),
+                "noun",
+                fallback_on_empty=False,
+            )
+            if len(subj_pool) == 0:
+                continue
+            try:
+                subj = N_to_DP_mutate(choice(subj_pool))
+                args = verb_args_from_verb(V, subj=subj)
+                VP = V_to_VP_mutate(V, aux=False, args=args)
+            except (LexicalGapError, KeyError):
+                continue
             vp_toks = VP[0].split()
             if len(vp_toks) >= 3 and vp_toks[0] == vp_toks[2] and vp_toks[1] == "to":
                 continue
-            subj = N_to_DP_mutate(choice(get_matches_of(V, "arg_1")))
             be = return_copula(subj)
             break
         else:
