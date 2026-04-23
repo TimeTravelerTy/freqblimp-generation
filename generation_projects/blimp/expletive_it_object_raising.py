@@ -6,8 +6,10 @@ from utils.exceptions import LexicalGapError
 
 from generation_projects.blimp.overlay_guards import (
     clausal_it_adjective_rows,
+    choose_row_for_active_zipf,
     control_object_verb_rows,
     object_raising_verb_rows,
+    rows_matching_inflection,
 )
 
 class Generator(data_generator.BenchmarkGenerator):
@@ -25,7 +27,8 @@ class Generator(data_generator.BenchmarkGenerator):
         self.compatible_pairs = []
         self._subject_pool_cache = {}
         for V_raise in self.raising_verbs:
-            for V_control in self.control_verbs:
+            compatible_controls = rows_matching_inflection(self.control_verbs, V_raise)
+            for V_control in compatible_controls:
                 self.compatible_pairs.append((V_raise, V_control))
         self.compatible_pairs = tuple(self.compatible_pairs)
 
@@ -56,18 +59,27 @@ class Generator(data_generator.BenchmarkGenerator):
         else:
             raise LexicalGapError("No compatible raising/control expletive-it subject pool found")
 
-        m_subj = N_to_DP_mutate(choice(subj_pool))
-        Aux_raise = return_aux(V_raise, m_subj)
-        Aux_control = return_aux(V_control, m_subj)
-        Adj = choice(self.clause_embedding_adjectives)
+        m_subj = N_to_DP_mutate(choose_row_for_active_zipf(
+            subj_pool,
+            "noun",
+            fallback_on_empty=False,
+            error_message="No regime-compatible expletive-it matrix subject",
+        ))
+        Aux = return_aux(V_raise, m_subj)
+        Adj = choose_row_for_active_zipf(
+            self.clause_embedding_adjectives,
+            "adjective",
+            fallback_on_empty=False,
+            error_message="No regime-compatible expletive-it adjective",
+        )
         V_emb = choice(all_verbs)
         sentence = make_sentence_from_verb(V_emb)
 
         data = {
-            "sentence_good": "%s %s %s it to be %s that %s." % (m_subj[0], Aux_raise[0], V_raise[0], Adj[0], sentence),
-            "sentence_bad": "%s %s %s it to be %s that %s." % (m_subj[0], Aux_control[0], V_control[0], Adj[0], sentence),
-            "two_prefix_prefix_good": "%s %s %s it to be" % (m_subj[0], Aux_raise[0], V_raise[0]),
-            "two_prefix_prefix_bad": "%s %s %s it to be" % (m_subj[0], Aux_control[0], V_control[0]),
+            "sentence_good": "%s %s %s it to be %s that %s." % (m_subj[0], Aux[0], V_raise[0], Adj[0], sentence),
+            "sentence_bad": "%s %s %s it to be %s that %s." % (m_subj[0], Aux[0], V_control[0], Adj[0], sentence),
+            "two_prefix_prefix_good": "%s %s %s it to be" % (m_subj[0], Aux[0], V_raise[0]),
+            "two_prefix_prefix_bad": "%s %s %s it to be" % (m_subj[0], Aux[0], V_control[0]),
             "two_prefix_word": Adj[0]
         }
         return data, data["sentence_good"]

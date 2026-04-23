@@ -1,5 +1,7 @@
 import csv
 import gc
+import hashlib
+import itertools
 import json
 import os
 import re
@@ -17,6 +19,7 @@ BASE_VOCAB_PATH = os.path.join(PROJECT_ROOT, "vocabulary.csv")
 DEFAULT_OVERLAY_PATH = os.path.join(PROJECT_ROOT, "vocabulary_overlay.csv")
 DEFAULT_OVERLAY_MANIFEST_PATH = os.path.join(PROJECT_ROOT, "vocabulary_overlay_manifest.json")
 DEFAULT_FREQUENCY_CACHE_PATH = os.path.join(PROJECT_ROOT, "outputs", "cache", "vocabulary_frequency_cache.json")
+DEFAULT_RUNTIME_CACHE_DIR = os.path.join(PROJECT_ROOT, "outputs", "cache", "runtime_vocab")
 _GET_ALL_CACHE = {}
 _GET_ALL_CONJ_CACHE = {}
 _GET_MATCHES_OF_CACHE = {}
@@ -29,6 +32,9 @@ _EXPRESSION_ZIPF_REGISTRY = None
 _EXPRESSION_ZIPF_REGISTRY_PATH = None
 _ROW_FREQUENCY_CACHE = {}
 _LAZY_REGISTRY = []  # LazyVocabSet instances that should be reset between paradigms
+_RUNTIME_VOCAB = None
+_RUNTIME_VOCAB_CONFIG = None
+_TABLE_INSTANCE_COUNTER = itertools.count()
 
 # Max entries for caches that store large numpy array slices.
 # Prevents unbounded memory growth when many unique (row, label, table) combinations
@@ -202,6 +208,7 @@ class IndexedTable:
         self.dtype = source.dtype
         self.shape = (len(self.indices),)
         self.strides = None
+        self._cache_token = next(_TABLE_INSTANCE_COUNTER)
 
     def __len__(self):
         return len(self.indices)
@@ -358,6 +365,14 @@ def _normalize_table(table):
     return table
 
 
+def _reset_lazy_vocab_sets():
+    for lazy_value in _LAZY_REGISTRY:
+        try:
+            lazy_value._value = None
+        except Exception:
+            pass
+
+
 _QUERY_CACHE_CLEAR_HOOKS: list = []
 
 
@@ -372,7 +387,7 @@ def register_query_cache_clear_hook(hook):
         _QUERY_CACHE_CLEAR_HOOKS.append(hook)
 
 
-def clear_query_caches():
+def clear_query_caches(reset_lazy_vocab=False):
     global _OVERLAY_METADATA_REGISTRY, _OVERLAY_METADATA_REGISTRY_PATH
     _GET_ALL_CACHE.clear()
     _GET_ALL_CONJ_CACHE.clear()
@@ -393,6 +408,8 @@ def clear_query_caches():
     # vocabulary table. Clearing them forces large numpy reallocations every
     # paradigm; Python's allocator retains pages at peak, causing RSS to double
     # at the first paradigm that touches all_nouns/all_transitive_verbs together.
+    if reset_lazy_vocab:
+        _reset_lazy_vocab_sets()
     for hook in _QUERY_CACHE_CLEAR_HOOKS:
         hook()
     gc.collect()
@@ -510,13 +527,32 @@ def _load_vocab_csv(path, mmap_mode=None):
     return _load_vocab_csv_runtime(path, mmap_mode=mmap_mode)
 
 
+def _runtime_compact_cache_path(path):
+    digest = hashlib.md5(os.path.abspath(path).encode("utf-8")).hexdigest()[:12]
+    filename = "%s.%s.runtime.compact.%s.npy" % (
+        os.path.basename(path),
+        digest,
+        _RUNTIME_COMPACT_CACHE_VERSION,
+    )
+    return os.path.join(DEFAULT_RUNTIME_CACHE_DIR, filename)
+
+
 def _load_vocab_csv_runtime(path, mmap_mode=None, exclude_acronym_nouns=False):
     if not path or not os.path.exists(path):
         return np.array([], dtype=data_type)
-    compact_cache = path + ".runtime.compact.%s.npy" % _RUNTIME_COMPACT_CACHE_VERSION
+    compact_cache = _runtime_compact_cache_path(path)
+    legacy_compact_cache = path + ".runtime.compact.%s.npy" % _RUNTIME_COMPACT_CACHE_VERSION
     if os.path.exists(compact_cache) and os.path.getmtime(compact_cache) >= os.path.getmtime(path):
         try:
             table = np.load(compact_cache, allow_pickle=False, mmap_mode=mmap_mode)
+            expected_names = tuple(field for field, _dtype in data_type)
+            if getattr(getattr(table, "dtype", None), "names", ()) == expected_names:
+                return table
+        except Exception:
+            pass
+    if os.path.exists(legacy_compact_cache) and os.path.getmtime(legacy_compact_cache) >= os.path.getmtime(path):
+        try:
+            table = np.load(legacy_compact_cache, allow_pickle=False, mmap_mode=mmap_mode)
             expected_names = tuple(field for field, _dtype in data_type)
             if getattr(getattr(table, "dtype", None), "names", ()) == expected_names:
                 return table
@@ -582,6 +618,9 @@ def _infer_compact_dtype(path, exclude_acronym_nouns=False):
 
 
 def _write_compact_vocab_npy(csv_path, npy_path, exclude_acronym_nouns=False):
+    directory = os.path.dirname(npy_path)
+    if directory and not os.path.exists(directory):
+        os.makedirs(directory, exist_ok=True)
     fieldnames, compact_dtype, row_count = _infer_compact_dtype(csv_path, exclude_acronym_nouns=exclude_acronym_nouns)
     field_positions = {field: idx for idx, field in enumerate(fieldnames)}
     tmp_path = npy_path + ".tmp.npy"
@@ -989,9 +1028,54 @@ def _filter_runtime_vocab(table):
     return table[table["OOV_inductive_biases"] != "1"]
 
 
-# Build once at import time. Overlay mode uses an on-disk memmap cache so the
-# runtime vocabulary does not have to exist as a giant in-memory ndarray.
-vocab = _build_runtime_vocab()
+def _runtime_vocab_config():
+    overlay_enabled = _env_flag("FREQBLIMP_USE_OVERLAY", default=False)
+    overlay_path = os.environ.get("FREQBLIMP_VOCAB_OVERLAY", DEFAULT_OVERLAY_PATH) if overlay_enabled else None
+    return overlay_enabled, overlay_path
+
+
+def _refresh_runtime_vocab_if_needed(force=False):
+    global _RUNTIME_VOCAB, _RUNTIME_VOCAB_CONFIG
+    config = _runtime_vocab_config()
+    if force or _RUNTIME_VOCAB is None or _RUNTIME_VOCAB_CONFIG != config:
+        _RUNTIME_VOCAB = _build_runtime_vocab()
+        _RUNTIME_VOCAB_CONFIG = config
+        clear_query_caches(reset_lazy_vocab=True)
+    return _RUNTIME_VOCAB
+
+
+class RuntimeVocabProxy:
+    def resolve(self):
+        return _refresh_runtime_vocab_if_needed()
+
+    def __array__(self, dtype=None, copy=None):
+        array = np.asarray(self.resolve(), dtype=dtype)
+        if copy:
+            return array.copy()
+        return array
+
+    def __array_function__(self, func, types, args, kwargs):
+        resolved_args = tuple(_normalize_table(arg) for arg in args)
+        resolved_kwargs = {key: _normalize_table(value) for key, value in kwargs.items()}
+        return func(*resolved_args, **resolved_kwargs)
+
+    def __len__(self):
+        return len(self.resolve())
+
+    def __iter__(self):
+        return iter(self.resolve())
+
+    def __getitem__(self, item):
+        return self.resolve()[item]
+
+    def __getattr__(self, name):
+        return getattr(self.resolve(), name)
+
+    def __repr__(self):
+        return "<RuntimeVocabProxy %r>" % (_RUNTIME_VOCAB_CONFIG,)
+
+
+vocab = RuntimeVocabProxy()
 
 # Lazy-loaded structures — only built on first access (avoids O(N) startup cost with large overlays)
 _OVERLAY_METADATA_REGISTRY = None
@@ -1008,7 +1092,7 @@ def _ensure_overlay_metadata_registry():
 
 
 def get_runtime_vocab():
-    return vocab
+    return _refresh_runtime_vocab_if_needed()
 
 
 def get_row_metadata(row):
@@ -1121,15 +1205,10 @@ def _table_cache_key(table):
     if isinstance(table, FilteredTable):
         return ("filtered", _table_cache_key(table.source), bool(table.exclude_acronym_nouns))
     if isinstance(table, IndexedTable):
-        interface = getattr(table.indices, "__array_interface__", None)
-        data_ptr = None
-        if interface and interface.get("data"):
-            data_ptr = interface["data"][0]
         return (
             "indexed",
             _table_cache_key(table.source),
-            data_ptr,
-            len(table.indices),
+            table._cache_token,
         )
     interface = getattr(table, "__array_interface__", None)
     data_ptr = None

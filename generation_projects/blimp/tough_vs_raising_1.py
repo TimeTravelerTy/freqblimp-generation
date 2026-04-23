@@ -1,9 +1,11 @@
 from utils import data_generator
 from utils.constituent_building import *
 from utils.conjugate import *
-from utils.randomize import choice
 
 from generation_projects.blimp.overlay_guards import (
+    choose_matching_row,
+    choose_row_for_active_zipf,
+    dp_buildable_nominal_rows,
     subject_raising_adjective_rows,
     tough_adjective_rows,
 )
@@ -21,6 +23,8 @@ class Generator(data_generator.BenchmarkGenerator):
         self.raising_preds = subject_raising_adjective_rows()
         self.tough_preds = tough_adjective_rows()
         self.strict_transitive = get_all("strict_trans", "1")
+        self.safe_nominals = dp_buildable_nominal_rows()
+        self.max_sample_attempts = 128
 
     def sample(self):
         # The hamburger is tough    to devour
@@ -28,11 +32,42 @@ class Generator(data_generator.BenchmarkGenerator):
         # The hamburger is likely   to devour
         # Subj          be A_raise  TO V
 
-        A_tough = choice(self.tough_preds)
-        A_raising = choice(self.raising_preds)
-        V = choice(get_matches_of(A_tough, "arg_1", self.strict_transitive))
-        subj = N_to_DP_mutate(choice(get_matches_of(V, "arg_2")))
-        be = return_copula(subj)
+        for _ in range(self.max_sample_attempts):
+            try:
+                A_tough = choose_row_for_active_zipf(
+                    self.tough_preds,
+                    "adjective",
+                    fallback_on_empty=False,
+                    error_message="No regime-compatible tough adjectives",
+                )
+                A_raising = choose_row_for_active_zipf(
+                    self.raising_preds,
+                    "adjective",
+                    fallback_on_empty=False,
+                    error_message="No regime-compatible raising adjectives",
+                )
+                V = choose_matching_row(
+                    A_tough,
+                    "arg_1",
+                    self.strict_transitive,
+                    "verb",
+                    fallback_on_empty=False,
+                    error_message="No regime-compatible tough_vs_raising_1 verb",
+                )
+                subj = N_to_DP_mutate(choose_matching_row(
+                    V,
+                    "arg_2",
+                    self.safe_nominals,
+                    "noun",
+                    fallback_on_empty=False,
+                    error_message="No regime-compatible tough_vs_raising_1 subject",
+                ))
+                be = return_copula(subj)
+                break
+            except LexicalGapError:
+                continue
+        else:
+            raise LexicalGapError("No regime-compatible tough_vs_raising_1 sample found after bounded retries")
 
         data = {
             "sentence_good": "%s %s %s to %s." % (subj[0], be[0], A_tough[0], V[0]),

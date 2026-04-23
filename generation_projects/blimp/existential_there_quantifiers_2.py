@@ -5,6 +5,7 @@ from utils.randomize import choice
 from functools import reduce
 
 from generation_projects.blimp.overlay_guards import (
+    choose_row_for_active_zipf,
     filter_nouns_for_requirement,
     filter_plural_looking_singular_nouns,
 )
@@ -22,6 +23,7 @@ class Generator(data_generator.BenchmarkGenerator):
         self.bad_quantifiers = reduce(np.union1d, [get_all("expression", s, all_determiners) for s in bad_quantifiers_str])
         bad_subjs = reduce(np.union1d, (all_relational_poss_nouns, all_proper_names, get_all("category", "NP")))
         self.safe_subjs = filter_plural_looking_singular_nouns(np.setdiff1d(all_nominals, bad_subjs))
+        self.count_safe_subjs = filter_nouns_for_requirement(self.safe_subjs, "COUNT")
 
     def sample(self):
         # Every monster is  there eating children.
@@ -29,10 +31,19 @@ class Generator(data_generator.BenchmarkGenerator):
         # There is  every monster eating children.
         # THERE aux D     subj    VP
 
-        noun_pool = filter_nouns_for_requirement(self.safe_subjs, "COUNT")
-        subj = N_to_DP_mutate(choice(noun_pool), determiner=False)
+        subj = N_to_DP_mutate(choose_row_for_active_zipf(
+            self.count_safe_subjs,
+            "noun",
+            fallback_on_empty=False,
+            error_message="No regime-compatible existential_there_quantifiers_2 subject",
+        ), determiner=False)
         D = choice(get_matched_by(subj, "arg_1", self.bad_quantifiers))
-        V = choice(get_matched_by(subj, "arg_1", all_ing_verbs))
+        V = choose_row_for_active_zipf(
+            get_matched_by(subj, "arg_1", all_ing_verbs),
+            "verb",
+            fallback_on_empty=False,
+            error_message="No regime-compatible existential_there_quantifiers_2 verb",
+        )
         allow_negated = D[0] != "no" and  D[0] != "some"
         args = verb_args_from_verb(V, subj=subj, allow_negated=allow_negated)
         VP = V_to_VP_mutate(V, args=args, aux=False)

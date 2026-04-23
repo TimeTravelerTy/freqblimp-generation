@@ -6,6 +6,7 @@ from utils.exceptions import LexicalGapError
 from functools import reduce
 
 from generation_projects.blimp.overlay_guards import (
+    choose_row_for_active_zipf,
     control_object_verb_rows,
     object_raising_verb_rows,
     rows_matching_inflection,
@@ -63,15 +64,30 @@ class Generator(data_generator.BenchmarkGenerator):
         else:
             raise LexicalGapError("No compatible raising/control object-raising subject pool found")
 
-        m_subj = N_to_DP_mutate(choice(subj_pool))
+        m_subj = N_to_DP_mutate(choose_row_for_active_zipf(
+            subj_pool,
+            "noun",
+            fallback_on_empty=False,
+            error_message="No regime-compatible existential_there_object_raising matrix subject",
+        ))
 
         Aux = return_aux(V_raise, m_subj)
 
-        emb_subj = N_to_DP_mutate(choice(self.safe_emb_subjs), determiner=False)
+        emb_subj = N_to_DP_mutate(choose_row_for_active_zipf(
+            self.safe_emb_subjs,
+            "noun",
+            fallback_on_empty=False,
+            error_message="No regime-compatible existential_there_object_raising embedded subject",
+        ), determiner=False)
         D = choice(get_matched_by(emb_subj, "arg_1", self.good_quantifiers_sg)) \
             if emb_subj["sg"] == "1" \
             else choice(get_matched_by(emb_subj, "arg_1", self.good_quantifiers_pl))
-        V = choice(get_matched_by(emb_subj, "arg_1", all_ing_verbs))
+        V = choose_row_for_active_zipf(
+            get_matched_by(emb_subj, "arg_1", all_ing_verbs),
+            "verb",
+            fallback_on_empty=False,
+            error_message="No regime-compatible existential_there_object_raising embedded verb",
+        )
         allow_negated = D[0] != "no" and D[0] != "some"
         args = verb_args_from_verb(V, subj=emb_subj, allow_negated=allow_negated)
         VP = V_to_VP_mutate(V, args=args, aux=False)

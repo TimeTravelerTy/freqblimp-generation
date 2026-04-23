@@ -1,5 +1,3 @@
-import importlib
-import inspect
 import json
 import os
 import subprocess
@@ -19,6 +17,7 @@ from generation_projects.blimp.overlay_coverage import (
     RUNTIME_VERIFIED_WITHOUT_NEW_HOOKS,
     SKIP_FOR_OVERLAY,
 )
+from generation_projects.blimp.registry import build_generator_from_stem, generator_stems
 from utils import data_generator
 from utils.exceptions import LexicalGapError
 from utils.randomize import SamplingPolicy, clear_sampling_policy, configure_sampling_policy, set_trace_recording_enabled
@@ -30,32 +29,11 @@ class BlimpGeneratorSmokeTests(unittest.TestCase):
         os.environ.pop("FREQBLIMP_MAX_FAILURES", None)
 
     def _build_generator(self, stem):
-        module = importlib.import_module("generation_projects.blimp.%s" % stem)
-        if hasattr(module, "build_generator"):
-            return module.build_generator()
-        generator_classes = []
-        for _name, value in inspect.getmembers(module, inspect.isclass):
-            if value in {
-                data_generator.Generator,
-                data_generator.BenchmarkGenerator,
-                data_generator.ScalarImplicatureGenerator,
-                data_generator.PresuppositionGenerator,
-            }:
-                continue
-            if issubclass(value, data_generator.Generator):
-                generator_classes.append(value)
-        self.assertTrue(generator_classes, stem)
-        generator_classes.sort(key=lambda cls: cls.__name__)
-        return generator_classes[0]()
+        return build_generator_from_stem(stem)
 
     def test_all_blimp_generators_construct(self):
-        root = Path("generation_projects/blimp")
-        ignored = {"__init__", "run", "build_overlay", "sbatch_generator", "prune_flagged_verb_frames", "overlay_guards", "overlay_coverage"}
         failures = []
-        for path in sorted(root.glob("*.py")):
-            stem = path.stem
-            if stem in ignored:
-                continue
+        for stem in generator_stems():
             try:
                 self._build_generator(stem)
             except Exception as exc:  # pragma: no cover - surfaced via assertion below
@@ -112,6 +90,99 @@ class BlimpGeneratorSmokeTests(unittest.TestCase):
         self.assertEqual(manifest["run"]["generated_pairs"], 1)
         self.assertEqual(manifest["run"]["failures"], 11)
         self.assertIsNone(manifest["run"]["failure_limit"])
+
+
+class BlimpFrequencyGuardTests(unittest.TestCase):
+    def tearDown(self):
+        clear_sampling_policy()
+        clear_query_caches()
+
+    def test_curated_control_raising_families_respect_head_band(self):
+        from generation_projects.blimp.overlay_guards import (
+            subject_raising_adjective_rows,
+            tough_adjective_rows,
+        )
+
+        configure_sampling_policy(
+            SamplingPolicy(
+                seed=0,
+                controlled_pos=("adjective",),
+                zipf_min={"adjective": 4.0},
+                zipf_max={"adjective": 7.0},
+            )
+        )
+        clear_query_caches()
+
+        tough_rows = tough_adjective_rows()
+        raising_rows = subject_raising_adjective_rows()
+
+        self.assertGreaterEqual(len(tough_rows), 10)
+        self.assertGreaterEqual(len(raising_rows), 10)
+        self.assertNotIn("illuminating", set(map(str, tough_rows["expression"])))
+        self.assertNotIn("reputed", set(map(str, raising_rows["expression"])))
+
+    def test_bare_nominal_dps_synthesize_agreement_features(self):
+        from utils.constituent_building import N_to_DP_mutate
+        from utils.vocab_sets import all_auxs, all_ing_verbs, all_nominals
+        from utils.vocab_table import get_all, get_matched_by
+
+        subj = N_to_DP_mutate(get_all("expression", "computer", all_nominals)[0], determiner=False)
+        subj_features = set(str(subj["arg_1"]).split("^"))
+        self.assertIn("sg=1", subj_features)
+        self.assertIn("mass=0", subj_features)
+        self.assertIn("start_with_vowel=0", subj_features)
+        self.assertIn("properNoun=0", subj_features)
+
+        verb = get_all("expression", "failing", all_ing_verbs)[0]
+        aux_matches = get_matched_by(verb, "arg_2", get_matched_by(subj, "arg_1", all_auxs))
+        aux_expressions = set(map(str, aux_matches["expression"]))
+        self.assertNotIn("are", aux_expressions)
+        self.assertNotIn("were", aux_expressions)
+        self.assertTrue(aux_expressions & {"is", "was", "isn't", "wasn't"})
+
+    def test_indexed_table_zipf_cache_keys_do_not_alias_reused_index_buffers(self):
+        from generation_projects.blimp.overlay_guards import (
+            filter_rows_for_active_zipf,
+            subject_raising_verb_rows,
+        )
+        from utils.vocab_table import IndexedTable
+
+        configure_sampling_policy(
+            SamplingPolicy(
+                seed=0,
+                controlled_pos=("verb",),
+                zipf_min={"verb": 4.0},
+                zipf_max={"verb": 7.0},
+            )
+        )
+        clear_query_caches()
+
+        rows = subject_raising_verb_rows()
+        ing_positions = np.flatnonzero(np.asarray(rows["ing"], dtype=str) == "1")
+        pres_positions = np.flatnonzero(
+            (np.asarray(rows["finite"], dtype=str) == "1")
+            & (np.asarray(rows["pres"], dtype=str) == "1")
+        )[:len(ing_positions)]
+        self.assertGreater(len(ing_positions), 0)
+
+        shared_indices = np.array(ing_positions, dtype=np.int64)
+        ing_view = IndexedTable(rows, shared_indices)
+        ing_filtered = filter_rows_for_active_zipf(ing_view, "verb", fallback_on_empty=False)
+        ing_expressions = tuple(map(str, ing_filtered["expression"]))
+
+        shared_indices[:] = pres_positions
+        pres_view = IndexedTable(rows, shared_indices)
+        pres_filtered = filter_rows_for_active_zipf(pres_view, "verb", fallback_on_empty=False)
+        pres_expressions = tuple(map(str, pres_filtered["expression"]))
+
+        self.assertEqual(set(ing_expressions), set(map(str, rows[ing_positions]["expression"])))
+        self.assertEqual(set(pres_expressions), set(map(str, rows[pres_positions]["expression"])))
+        self.assertNotEqual(set(ing_expressions), set(pres_expressions))
+
+    def test_global_verb_pool_excludes_blocked_overlay_artifacts(self):
+        from utils.vocab_sets import all_verbs
+
+        self.assertNotIn("according", set(map(str, all_verbs["expression"])))
 
 
 class BlimpOverlaySmokeTests(unittest.TestCase):
@@ -215,13 +286,10 @@ class BlimpOverlaySmokeTests(unittest.TestCase):
             return [json.loads(line) for line in output_path.read_text().splitlines() if line.strip()]
 
     def _all_blimp_uids(self):
-        root = Path("generation_projects/blimp")
-        ignored = {"__init__", "run", "build_overlay", "sbatch_generator", "prune_flagged_verb_frames", "overlay_guards", "overlay_coverage"}
         helper = BlimpGeneratorSmokeTests()
         return sorted(
-            helper._build_generator(path.stem).uid
-            for path in root.glob("*.py")
-            if path.stem not in ignored
+            helper._build_generator(stem).uid
+            for stem in generator_stems()
         )
 
     def test_overlay_manifest_contains_special_bundles(self):
@@ -295,6 +363,22 @@ class BlimpOverlaySmokeTests(unittest.TestCase):
                 )
                 for payload in payloads:
                     self.assertNotEqual(payload["sentence_good"], payload["sentence_bad"])
+
+    def test_runtime_vocab_switches_to_overlay_in_process(self):
+        import utils.vocab_table as vocab_table
+
+        os.environ.pop("FREQBLIMP_USE_OVERLAY", None)
+        os.environ.pop("FREQBLIMP_VOCAB_OVERLAY", None)
+        clear_query_caches()
+        base_vocab = vocab_table.get_runtime_vocab()
+        self.assertEqual(type(base_vocab).__name__, "memmap")
+
+        os.environ["FREQBLIMP_USE_OVERLAY"] = "1"
+        os.environ["FREQBLIMP_VOCAB_OVERLAY"] = self.overlay_path
+        clear_query_caches()
+        overlay_vocab = vocab_table.get_runtime_vocab()
+        self.assertEqual(type(overlay_vocab).__name__, "ConcatTable")
+        self.assertEqual(len(overlay_vocab.parts), 2)
 
 
 class VocabTableMemorySafetyTests(unittest.TestCase):

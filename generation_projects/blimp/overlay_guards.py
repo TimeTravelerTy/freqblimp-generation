@@ -11,6 +11,8 @@ from utils.vocab_table import (
     _table_cache_key,
     get_all,
     get_all_conjunctive,
+    get_matched_by,
+    get_matches_of,
     get_table_zipf_expression,
     register_query_cache_clear_hook,
     table_setdiff1d,
@@ -279,6 +281,7 @@ def overlay_enabled() -> bool:
 
 
 _ZIPF_FILTER_CACHE: dict = {}
+_CURATED_ZIPF_MIN_CANDIDATES = 10
 
 
 def _clear_zipf_filter_cache():
@@ -288,7 +291,16 @@ def _clear_zipf_filter_cache():
 register_query_cache_clear_hook(_clear_zipf_filter_cache)
 
 
-def filter_rows_for_active_zipf(table, controlled_pos: str, fallback_on_empty: bool=True):
+def _zipf_distance_from_window(zipf_values, lower, upper):
+    distance = np.zeros(len(zipf_values), dtype=float)
+    if lower is not None:
+        distance = np.maximum(distance, lower - zipf_values)
+    if upper is not None:
+        distance = np.maximum(distance, zipf_values - upper)
+    return distance
+
+
+def filter_rows_for_active_zipf(table, controlled_pos: str, fallback_on_empty: bool=True, minimum_candidates: Optional[int]=None):
     policy = get_active_policy()
     if policy is None or len(table) == 0:
         return table
@@ -297,7 +309,17 @@ def filter_rows_for_active_zipf(table, controlled_pos: str, fallback_on_empty: b
     lower, upper = policy.bounds_for(controlled_pos)
     if lower is None and upper is None:
         return table
-    cache_key = (_table_cache_key(table), controlled_pos, lower, upper, bool(fallback_on_empty))
+    target_count = None
+    if minimum_candidates is not None:
+        target_count = max(int(minimum_candidates), 0)
+    cache_key = (
+        _table_cache_key(table),
+        controlled_pos,
+        lower,
+        upper,
+        bool(fallback_on_empty),
+        target_count,
+    )
     cached = _ZIPF_FILTER_CACHE.get(cache_key)
     if cached is not None:
         return cached
@@ -308,10 +330,83 @@ def filter_rows_for_active_zipf(table, controlled_pos: str, fallback_on_empty: b
     if upper is not None:
         mask &= zipf_values <= upper
     filtered = table[mask]
+    if target_count:
+        target_count = min(target_count, len(table))
+        if len(filtered) < target_count:
+            distance = _zipf_distance_from_window(zipf_values, lower, upper)
+            order = np.argsort(distance, kind="stable")
+            threshold = float(distance[order[target_count - 1]])
+            filtered = table[distance <= threshold]
     if len(filtered) == 0 and fallback_on_empty:
         filtered = table
     _ZIPF_FILTER_CACHE[cache_key] = filtered
     return filtered
+
+
+def choose_row_for_active_zipf(table,
+                               controlled_pos: str,
+                               fallback_on_empty: bool=False,
+                               avoid=None,
+                               error_message: Optional[str]=None,
+                               minimum_candidates: Optional[int]=None):
+    candidates = filter_rows_for_active_zipf(
+        table,
+        controlled_pos,
+        fallback_on_empty=fallback_on_empty,
+        minimum_candidates=minimum_candidates,
+    )
+    if len(candidates) == 0:
+        raise LexicalGapError(error_message or "No %s candidates available" % controlled_pos)
+    return uniform_choice(candidates, avoid=avoid)
+
+
+def choose_matching_row(row,
+                        label: str,
+                        table,
+                        controlled_pos: str,
+                        fallback_on_empty: bool=False,
+                        avoid=None,
+                        error_message: Optional[str]=None,
+                        minimum_candidates: Optional[int]=None):
+    return choose_row_for_active_zipf(
+        get_matches_of(row, label, table),
+        controlled_pos,
+        fallback_on_empty=fallback_on_empty,
+        avoid=avoid,
+        error_message=error_message,
+        minimum_candidates=minimum_candidates,
+    )
+
+
+def choose_matched_by_row(row,
+                          label: str,
+                          table,
+                          controlled_pos: str,
+                          fallback_on_empty: bool=False,
+                          avoid=None,
+                          error_message: Optional[str]=None,
+                          minimum_candidates: Optional[int]=None):
+    return choose_row_for_active_zipf(
+        get_matched_by(row, label, table),
+        controlled_pos,
+        fallback_on_empty=fallback_on_empty,
+        avoid=avoid,
+        error_message=error_message,
+        minimum_candidates=minimum_candidates,
+    )
+
+
+def verbs_with_argument_slots(subject_rows, object_rows, verb_space):
+    kept_indices = []
+    for idx, verb in enumerate(verb_space):
+        if len(get_matches_of(verb, "arg_1", subject_rows)) == 0:
+            continue
+        if len(get_matches_of(verb, "arg_2", object_rows)) == 0:
+            continue
+        kept_indices.append(idx)
+    if not kept_indices:
+        return np.array([], dtype=verb_space.dtype)
+    return verb_space[np.asarray(kept_indices, dtype=np.int64)]
 
 
 _INFLECTION_FIELDS = ("finite", "bare", "pres", "past", "ing", "en", "3sg")
@@ -376,6 +471,24 @@ def _rows_for_expression_families(table, expressions: Sequence[str], expand_infl
     return table[exact_mask]
 
 
+def _curated_rows_for_expression_families(table,
+                                          expressions: Sequence[str],
+                                          controlled_pos: str,
+                                          expand_inflections: bool=False,
+                                          minimum_candidates: int=_CURATED_ZIPF_MIN_CANDIDATES):
+    rows = _rows_for_expression_families(
+        table,
+        expressions,
+        expand_inflections=expand_inflections,
+    )
+    return filter_rows_for_active_zipf(
+        rows,
+        controlled_pos,
+        fallback_on_empty=True,
+        minimum_candidates=minimum_candidates,
+    )
+
+
 def _exclude_expression_families(table, expressions: Sequence[str]):
     if len(table) == 0:
         return table
@@ -417,22 +530,42 @@ def adjective_rows_for_category(category_2: str):
 
 def subject_raising_verb_rows():
     rows = verb_rows_for_category("V_raising_subj")
-    return _rows_for_expression_families(rows, _SUBJECT_RAISING_VERBS, expand_inflections=True)
+    return _curated_rows_for_expression_families(
+        rows,
+        _SUBJECT_RAISING_VERBS,
+        "verb",
+        expand_inflections=True,
+    )
 
 
 def control_subject_verb_rows():
     rows = verb_rows_for_category("V_control_subj")
-    return _rows_for_expression_families(rows, _CONTROL_SUBJECT_VERBS, expand_inflections=True)
+    return _curated_rows_for_expression_families(
+        rows,
+        _CONTROL_SUBJECT_VERBS,
+        "verb",
+        expand_inflections=True,
+    )
 
 
 def object_raising_verb_rows():
     rows = verb_rows_for_category("V_raising_object")
-    return _rows_for_expression_families(rows, _OBJECT_RAISING_VERBS, expand_inflections=True)
+    return _curated_rows_for_expression_families(
+        rows,
+        _OBJECT_RAISING_VERBS,
+        "verb",
+        expand_inflections=True,
+    )
 
 
 def control_object_verb_rows():
     rows = verb_rows_for_category("V_control_object")
-    return _rows_for_expression_families(rows, _CONTROL_OBJECT_VERBS, expand_inflections=True)
+    return _curated_rows_for_expression_families(
+        rows,
+        _CONTROL_OBJECT_VERBS,
+        "verb",
+        expand_inflections=True,
+    )
 
 
 def subject_raising_adjective_rows():
@@ -442,27 +575,37 @@ def subject_raising_adjective_rows():
     is the single source of truth for both generators and the overlay pipeline.
     """
     rows = adjective_rows_for_category("Adj_raising_subj")
-    return _rows_for_expression_families(rows, _RAISING_ADJECTIVES)
+    return _curated_rows_for_expression_families(rows, _RAISING_ADJECTIVES, "adjective")
 
 
 def control_subject_adjective_rows():
     rows = adjective_rows_for_category("Adj_control_subj")
-    return _rows_for_expression_families(rows, _CONTROL_ADJECTIVES)
+    return _curated_rows_for_expression_families(rows, _CONTROL_ADJECTIVES, "adjective")
 
 
 def tough_adjective_rows():
     rows = adjective_rows_for_category("Adj_tough")
-    return _rows_for_expression_families(rows, _TOUGH_ADJECTIVES)
+    return _curated_rows_for_expression_families(rows, _TOUGH_ADJECTIVES, "adjective")
 
 
 def clausal_it_adjective_rows():
     rows = adjective_rows_for_category("Adj_clausal")
-    return rows[rows["arg_1"] == "expression=it"]
+    return filter_rows_for_active_zipf(
+        rows[rows["arg_1"] == "expression=it"],
+        "adjective",
+        fallback_on_empty=True,
+        minimum_candidates=_CURATED_ZIPF_MIN_CANDIDATES,
+    )
 
 
 def existential_bad_control_subject_verb_rows():
-    rows = control_subject_verb_rows()
-    return _exclude_expression_families(rows, _EXISTENTIAL_CONTROL_SUBJECT_EXCLUDED_VERBS)
+    rows = _exclude_expression_families(control_subject_verb_rows(), _EXISTENTIAL_CONTROL_SUBJECT_EXCLUDED_VERBS)
+    return filter_rows_for_active_zipf(
+        rows,
+        "verb",
+        fallback_on_empty=True,
+        minimum_candidates=_CURATED_ZIPF_MIN_CANDIDATES,
+    )
 
 
 @lru_cache(maxsize=1)
@@ -480,6 +623,28 @@ def dp_buildable_nominal_rows():
     )
 
 
+def _single_token_verb_rows(table):
+    if len(table) == 0:
+        return table
+    expr = np.asarray(table["expression"], dtype=str)
+    mask = np.array([" " not in value for value in expr], dtype=bool)
+    return table[mask]
+
+
+def passivizable_participle_rows():
+    rows = get_all("passive", "1", get_all("category", "(S\\NP)/NP", get_all("en", "1", get_all("verb", "1"))))
+    return _single_token_verb_rows(rows)
+
+
+def nonpassivizable_participle_rows():
+    rows = get_all(
+        "passive",
+        "0",
+        get_all("strict_intrans", "1", get_all("category", "S\\NP", get_all("en", "1", get_all("verb", "1")))),
+    )
+    return _single_token_verb_rows(rows)
+
+
 def drop_argument_good_verb_rows():
     rows = _rows_for_expression_families(get_all("verb", "1"), _DROP_ARGUMENT_GOOD_VERBS, expand_inflections=True)
     return get_all("strict_trans", "0", rows)
@@ -494,9 +659,10 @@ def drop_argument_bad_verb_rows():
 
 
 def finite_clause_embedding_verb_rows():
-    return _rows_for_expression_families(
+    return _curated_rows_for_expression_families(
         get_all("category_2", "V_embedding"),
         _FINITE_CLAUSE_EMBEDDING_VERBS,
+        "verb",
         expand_inflections=True,
     )
 

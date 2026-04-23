@@ -25,7 +25,7 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
                             ("a few", "several"),
                             ("many", "few"),
                             ("few", "many"),
-                            ("a few", "a lot"),
+                            ("a few", "a lot of"),
                             ("a lot of", "a few"),
                             ("no", "some"),
                             ("three", "more"),

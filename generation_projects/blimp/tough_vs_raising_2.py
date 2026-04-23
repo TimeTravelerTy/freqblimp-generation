@@ -1,11 +1,11 @@
 from utils import data_generator
 from utils.constituent_building import *
 from utils.conjugate import *
-from utils.randomize import choice
 
 from generation_projects.blimp.overlay_guards import (
+    choose_matching_row,
+    choose_row_for_active_zipf,
     dp_buildable_nominal_rows,
-    filter_rows_for_active_zipf,
     subject_raising_adjective_rows,
     tough_adjective_rows,
     tough_vs_raising_2_outer_verb_rows,
@@ -34,23 +34,34 @@ class Generator(data_generator.BenchmarkGenerator):
         # The hamburger is tough    to taste good
         # Subj          be A_tough  TO VP
 
-        verb_pool = filter_rows_for_active_zipf(self.safe_verbs, "verb", fallback_on_empty=False)
-        if len(verb_pool) == 0:
-            raise LexicalGapError("No regime-compatible tough_vs_raising_2 verbs")
-
         for _ in range(self.max_sample_attempts):
-            A_tough = choice(self.tough_preds)
-            A_raising = choice(self.raising_preds)
-            V = choice(verb_pool)
-            subj_pool = filter_rows_for_active_zipf(
-                get_matches_of(V, "arg_1", self.safe_nominals),
-                "noun",
-                fallback_on_empty=False,
-            )
-            if len(subj_pool) == 0:
-                continue
             try:
-                subj = N_to_DP_mutate(choice(subj_pool))
+                A_tough = choose_row_for_active_zipf(
+                    self.tough_preds,
+                    "adjective",
+                    fallback_on_empty=False,
+                    error_message="No regime-compatible tough adjectives",
+                )
+                A_raising = choose_row_for_active_zipf(
+                    self.raising_preds,
+                    "adjective",
+                    fallback_on_empty=False,
+                    error_message="No regime-compatible raising adjectives",
+                )
+                V = choose_row_for_active_zipf(
+                    self.safe_verbs,
+                    "verb",
+                    fallback_on_empty=False,
+                    error_message="No regime-compatible tough_vs_raising_2 verbs",
+                )
+                subj = N_to_DP_mutate(choose_matching_row(
+                    V,
+                    "arg_1",
+                    self.safe_nominals,
+                    "noun",
+                    fallback_on_empty=False,
+                    error_message="No regime-compatible tough_vs_raising_2 subject",
+                ))
                 args = verb_args_from_verb(V, subj=subj)
                 VP = V_to_VP_mutate(V, aux=False, args=args)
             except (LexicalGapError, KeyError):

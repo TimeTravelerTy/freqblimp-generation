@@ -353,6 +353,15 @@ def N_to_DP_mutate(noun, frequent=True, determiner=True, allow_quantifiers=True,
     else:
         noun[0] = " ".join([noun[0]] +
                            [x[0] for x in args["args"]])
+        if noun["noun"] == "1" and noun["arg_1"] == "":
+            agreement_parts = []
+            for feature in ("sg", "pl", "mass", "start_with_vowel", "properNoun"):
+                if feature not in noun.dtype.names:
+                    continue
+                value = str(noun[feature]).strip()
+                if value != "":
+                    agreement_parts.append("%s=%s" % (feature, value))
+            noun["arg_1"] = "^".join(agreement_parts)
     return noun
 
 

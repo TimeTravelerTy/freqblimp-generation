@@ -6,6 +6,7 @@ from utils.exceptions import LexicalGapError
 from functools import reduce
 
 from generation_projects.blimp.overlay_guards import (
+    choose_row_for_active_zipf,
     control_subject_verb_rows,
     control_subject_adjective_rows,
     curated_template_expressions,
@@ -77,35 +78,52 @@ class Generator(data_generator.BenchmarkGenerator):
             if verbal_predicate:
                 # Curated control verbs — fallback_on_empty=True so xtail falls back to full curated list
                 control_candidates = table_intersect1d(self.control_verbs, agree_verbs)
-                control_candidates = filter_rows_for_active_zipf(control_candidates, "verb", fallback_on_empty=True)
-                if len(control_candidates) == 0:
-                    raise LexicalGapError("No compatible control-subject verbs for agreement class")
-                control_row = choice(control_candidates)
+                control_row = choose_row_for_active_zipf(
+                    control_candidates,
+                    "verb",
+                    fallback_on_empty=True,
+                    error_message="No compatible control-subject verbs for agreement class",
+                )
                 aux = return_aux(control_row, emb_subj, allow_negated=allow_negated)
                 control = control_row[0]
             else:
-                control_row = choice(self.control_pred_rows) if overlay_enabled() and len(self.control_pred_rows) > 0 else None
+                control_row = choose_row_for_active_zipf(
+                    self.control_pred_rows,
+                    "adjective",
+                    fallback_on_empty=True,
+                    error_message="No compatible control-subject adjectives",
+                ) if overlay_enabled() and len(self.control_pred_rows) > 0 else None
                 control = control_row[0] if control_row is not None else choice(self.control_preds)
                 aux = return_copula(emb_subj, allow_negated=allow_negated)
 
             if verbal_predicate:
                 # Keep the good-side verbal predicate in the same inflectional shape as the sampled bad-side control verb.
                 raising_candidates = rows_matching_inflection(self.raising_verbs, control_row)
-                raising_candidates = filter_rows_for_active_zipf(raising_candidates, "verb", fallback_on_empty=True)
-                if len(raising_candidates) == 0:
-                    raise LexicalGapError("No compatible subject-raising verbs for auxiliary/agreement class")
-                raising = choice(raising_candidates)[0]
+                raising = choose_row_for_active_zipf(
+                    raising_candidates,
+                    "verb",
+                    fallback_on_empty=True,
+                    error_message="No compatible subject-raising verbs for auxiliary/agreement class",
+                )[0]
             else:
-                raising_row = choice(self.raising_pred_rows) if overlay_enabled() and len(self.raising_pred_rows) > 0 else None
+                raising_row = choose_row_for_active_zipf(
+                    self.raising_pred_rows,
+                    "adjective",
+                    fallback_on_empty=True,
+                    error_message="No compatible subject-raising adjectives",
+                ) if overlay_enabled() and len(self.raising_pred_rows) > 0 else None
                 raising = raising_row[0] if raising_row is not None else choice(self.raising_preds)
 
             # Embedded -ing verb: Zipf-filter with fallback=False; retry on empty
-            ing_verb_pool = filter_rows_for_active_zipf(
-                get_matched_by(emb_subj, "arg_1", all_ing_verbs), "verb", fallback_on_empty=False
-            )
-            if len(ing_verb_pool) == 0:
+            try:
+                V = choose_row_for_active_zipf(
+                    get_matched_by(emb_subj, "arg_1", all_ing_verbs),
+                    "verb",
+                    fallback_on_empty=False,
+                    error_message="No compatible existential_there_subject_raising embedded verb",
+                )
+            except LexicalGapError:
                 continue
-            V = choice(ing_verb_pool)
             args = verb_args_from_verb(V, subj=emb_subj, allow_negated=allow_negated)
             VP = V_to_VP_mutate(V, args=args, aux=False)
             break

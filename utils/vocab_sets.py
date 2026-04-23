@@ -7,23 +7,65 @@ from utils.vocab_table import *
 
 
 _BLOCKED_NOUN_EXPRESSIONS = (
+    "asshole",
+    "bitch",
+    "cock",
+    "cunt",
+    "dick",
+    "dildo",
+    "demon",
+    "demons",
     "femicide",
     "femicides",
+    "fag",
+    "faggot",
+    "fuck",
+    "idiot",
+    "idiots",
+    "instagram",
     "ipod",
     "ipods",
+    "motherfucker",
     "nazi",
     "nazis",
     "nato",
+    "penis",
+    "pussy",
     "raper",
     "rapers",
     "scholasticism",
     "scholasticisms",
+    "slave",
+    "slaves",
+    "slut",
+    "tit",
+    "tits",
+    "twat",
+    "vagina",
+    "whore",
+    "butt",
+)
+
+_BLOCKED_VERB_EXPRESSIONS = (
+    "according",
 )
 
 
 def _exclude_bad_noun_expressions(table):
     blocked_rows = []
     for expression in _BLOCKED_NOUN_EXPRESSIONS:
+        matches = get_all("expression", expression, table)
+        if len(matches) > 0:
+            blocked_rows.append(matches)
+    if not blocked_rows:
+        return table
+    blocked = reduce(table_union1d, blocked_rows)
+    return table_setdiff1d(table, blocked)
+
+
+def _exclude_bad_verb_expressions(table):
+    blocked_rows = []
+    for expression in _BLOCKED_VERB_EXPRESSIONS:
         matches = get_all("expression", expression, table)
         if len(matches) > 0:
             blocked_rows.append(matches)
@@ -88,6 +130,22 @@ def _resolve_lazy(value):
     return value
 
 
+def _verbs_matching_argument_sets(subject_rows, object_rows, verb_space):
+    subject_rows = _resolve_lazy(subject_rows)
+    object_rows = _resolve_lazy(object_rows)
+    verb_space = _resolve_lazy(verb_space)
+    kept_indices = []
+    for idx, verb in enumerate(verb_space):
+        if len(get_matches_of(verb, "arg_1", subject_rows)) == 0:
+            continue
+        if len(get_matches_of(verb, "arg_2", object_rows)) == 0:
+            continue
+        kept_indices.append(idx)
+    if not kept_indices:
+        return np.array([], dtype=verb_space.dtype)
+    return verb_space[np.asarray(kept_indices, dtype=np.int64)]
+
+
 # NOUNS
 all_nouns = _lazy(
     "all_nouns",
@@ -130,7 +188,7 @@ all_relational_poss_nouns = _lazy("all_relational_poss_nouns", lambda: get_all("
 all_proper_names = _lazy("all_proper_names", lambda: get_all("properNoun", "1"))
 
 # VERBS
-all_verbs = _lazy("all_verbs", lambda: get_all("verb", "1"))
+all_verbs = _lazy("all_verbs", lambda: _exclude_bad_verb_expressions(get_all("verb", "1")))
 all_transitive_verbs = _lazy("all_transitive_verbs", lambda: get_all("category", "(S\\NP)/NP"))
 all_intransitive_verbs = _lazy("all_intransitive_verbs", lambda: get_all("category", "S\\NP"))
 all_non_recursive_verbs = _lazy(
@@ -144,19 +202,11 @@ all_en_verbs = _lazy("all_en_verbs", lambda: get_all("en", "1", all_verbs))
 all_bare_verbs = _lazy("all_bare_verbs", lambda: get_all("bare", "1", all_verbs))
 all_anim_anim_verbs = _lazy(
     "all_anim_anim_verbs",
-    lambda: get_matched_by(
-        uniform_choice(all_animate_nouns),
-        "arg_1",
-        get_matched_by(uniform_choice(all_animate_nouns), "arg_2", all_transitive_verbs),
-    ),
+    lambda: _verbs_matching_argument_sets(all_animate_nouns, all_animate_nouns, all_transitive_verbs),
 )
 all_doc_doc_verbs = _lazy(
     "all_doc_doc_verbs",
-    lambda: get_matched_by(
-        uniform_choice(all_documents),
-        "arg_1",
-        get_matched_by(uniform_choice(all_documents), "arg_2", all_transitive_verbs),
-    ),
+    lambda: _verbs_matching_argument_sets(all_documents, all_documents, all_transitive_verbs),
 )
 all_refl_nonverbal_predicates = _lazy(
     "all_refl_nonverbal_predicates",

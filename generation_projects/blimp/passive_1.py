@@ -3,7 +3,13 @@ from utils.constituent_building import *
 from utils.conjugate import *
 from utils.randomize import choice
 
-from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+from generation_projects.blimp.overlay_guards import (
+    nonpassivizable_participle_rows,
+    passivizable_participle_rows,
+    choose_matching_row,
+    choose_matched_by_row,
+    choose_row_for_active_zipf,
+)
 
 class Generator(data_generator.BenchmarkGenerator):
     def __init__(self):
@@ -14,19 +20,8 @@ class Generator(data_generator.BenchmarkGenerator):
                          one_prefix_method=False,
                          two_prefix_method=False,
                          lexically_identical=False)
-
-        self.en_verbs = get_all("en", "1")
-        # Purely intransitive: strict_intrans=1 marks verbs with no transitive frame.
-        # This structurally excludes ambitransitive verbs like "contemplate"/"ponder"
-        # that carry both frames and whose passives are grammatical.
-        self.intransitive = get_all_conjunctive(
-            [("strict_intrans", "1"), ("passive", "0")],
-            self.en_verbs,
-        )
-        self.transitive = get_all("passive", "1", self.en_verbs)
-        transitive_exprs = set(map(str, self.transitive["expression"]))
-        keep_mask = ~np.isin(np.asarray(self.intransitive["expression"], dtype=str), list(transitive_exprs))
-        self.intransitive = self.intransitive[keep_mask]
+        self.intransitive = nonpassivizable_participle_rows()
+        self.transitive = passivizable_participle_rows()
         self.max_sample_attempts = 512
 
     def sample(self):
@@ -36,30 +31,43 @@ class Generator(data_generator.BenchmarkGenerator):
         # NP1      be  V_intrans BY NP2
 
         for _ in range(self.max_sample_attempts):
-            V_intrans_pool = filter_rows_for_active_zipf(self.intransitive, "verb", fallback_on_empty=False)
-            if len(V_intrans_pool) == 0:
-                raise LexicalGapError("No xtail-compatible purely-intransitive verb")
-            V_intrans = choice(V_intrans_pool)
-            NP1_candidates = filter_rows_for_active_zipf(
-                get_matches_of(V_intrans, "arg_1", all_nominals), "noun", fallback_on_empty=False
-            )
-            if len(NP1_candidates) == 0:
+            try:
+                V_intrans = choose_row_for_active_zipf(
+                    self.intransitive,
+                    "verb",
+                    fallback_on_empty=False,
+                    error_message="No xtail-compatible purely-intransitive verb",
+                    minimum_candidates=10,
+                )
+                NP1 = N_to_DP_mutate(choose_matching_row(
+                    V_intrans,
+                    "arg_1",
+                    all_nominals,
+                    "noun",
+                    fallback_on_empty=False,
+                    error_message="No regime-compatible passive patient",
+                ))
+                V_trans = choose_matched_by_row(
+                    NP1,
+                    "arg_2",
+                    self.transitive,
+                    "verb",
+                    fallback_on_empty=False,
+                    error_message="No regime-compatible passive verb",
+                    minimum_candidates=10,
+                )
+                NP2 = N_to_DP_mutate(choose_matching_row(
+                    V_trans,
+                    "arg_1",
+                    all_nominals,
+                    "noun",
+                    fallback_on_empty=False,
+                    error_message="No regime-compatible passive agent",
+                ))
+                be = return_copula(NP1)
+                break
+            except LexicalGapError:
                 continue
-            NP1 = N_to_DP_mutate(choice(NP1_candidates))
-            V_trans_pool = filter_rows_for_active_zipf(
-                get_matched_by(NP1, "arg_2", self.transitive), "verb", fallback_on_empty=False
-            )
-            if len(V_trans_pool) == 0:
-                continue
-            V_trans = choice(V_trans_pool)
-            NP2_candidates = filter_rows_for_active_zipf(
-                get_matches_of(V_trans, "arg_1", all_nominals), "noun", fallback_on_empty=False
-            )
-            if len(NP2_candidates) == 0:
-                continue
-            NP2 = N_to_DP_mutate(choice(NP2_candidates))
-            be = return_copula(NP1)
-            break
         else:
             raise LexicalGapError("No xtail-compatible passive pair found after bounded retries")
 
