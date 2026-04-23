@@ -85,7 +85,13 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
                     return True
         return False
 
-    def _source_balanced_pool(self, pool, minimum_size=1):
+    def _source_balanced_pool(self, pool, minimum_size=1, controlled_pos=None, minimum_candidates=None):
+        if controlled_pos is not None:
+            pool = filter_rows_for_active_zipf(
+                pool,
+                controlled_pos,
+                minimum_candidates=minimum_candidates,
+            )
         # Cap to avoid O(N_overlay) row_signature calls over huge pools.
         _POOL_CAP = 500
         if len(pool) > _POOL_CAP:
@@ -109,9 +115,20 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
         # Subj1 Aux1 V   D1  Adj1 Obj  AND Subj2 Aux2 V   D2    Adj2
 
         V = choice(self.safe_verbs)
-        subj_pool = self._source_balanced_pool(get_matches_of(V, "arg_1", all_nominals))
+        subj_pool = self._source_balanced_pool(
+            get_matches_of(V, "arg_1", all_nominals),
+            controlled_pos="noun",
+            minimum_candidates=10,
+        )
         Subj1 = choice(subj_pool)
-        Subj2 = choice(self._source_balanced_pool(get_matches_of(V, "arg_1", all_nominals)), avoid=Subj1)
+        Subj2 = choice(
+            self._source_balanced_pool(
+                get_matches_of(V, "arg_1", all_nominals),
+                controlled_pos="noun",
+                minimum_candidates=10,
+            ),
+            avoid=Subj1,
+        )
         Subj1 = N_to_DP_mutate(Subj1)
         Subj2 = N_to_DP_mutate(Subj2)
         Aux1 = return_aux(V, subj=Subj1)
@@ -119,7 +136,11 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
             Aux2 = Aux1
         else:
             Aux2 = return_aux(V, subj=Subj2)
-        obj_pool = get_matches_of(V, "arg_2", get_all("mass", "0", self.safe_objs))
+        obj_pool = self._source_balanced_pool(
+            get_matches_of(V, "arg_2", get_all("mass", "0", self.safe_objs)),
+            controlled_pos="noun",
+            minimum_candidates=10,
+        )
         # Cap the viability scan to avoid O(N_overlay) cache accumulation → OOM.
         # 500 candidates is more than enough to find viable objects.
         _SCAN_CAP = 500
@@ -130,11 +151,22 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
             scan_pool = obj_pool
         viable_objs = [obj for obj in scan_pool if self._viable_obj_check(obj)]
         if viable_objs:
-            Obj = choice(self._source_balanced_pool(np.array(viable_objs, dtype=obj_pool.dtype)))
+            Obj = choice(
+                self._source_balanced_pool(
+                    np.array(viable_objs, dtype=obj_pool.dtype),
+                    controlled_pos="noun",
+                    minimum_candidates=10,
+                )
+            )
         else:
-            Obj = choice(self._source_balanced_pool(obj_pool))
+            Obj = choice(obj_pool)
         adjective_pool = self._strict_adjective_pool_for_obj(Obj) if viable_objs else self._adjective_pool_for_obj(Obj)
-        adjective_pool = self._source_balanced_pool(adjective_pool, minimum_size=2)
+        adjective_pool = self._source_balanced_pool(
+            adjective_pool,
+            minimum_size=2,
+            controlled_pos="adjective",
+            minimum_candidates=10,
+        )
         Adj1 = choice(adjective_pool)
         Adj2 = choice(adjective_pool, avoid=Adj1)
         if Obj["pl"] == "0":
