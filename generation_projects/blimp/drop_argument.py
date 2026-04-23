@@ -1,13 +1,14 @@
 from utils import data_generator
 from utils.constituent_building import *
 from utils.conjugate import *
-from utils.randomize import choice
 
 from generation_projects.blimp.overlay_guards import (
+    choose_matching_row,
+    choose_matched_by_row,
+    choose_row_for_active_zipf,
     dp_buildable_nominal_rows,
     drop_argument_bad_verb_rows,
     drop_argument_good_verb_rows,
-    filter_rows_for_active_zipf,
 )
 
 class CSCGenerator(data_generator.BenchmarkGenerator):
@@ -35,28 +36,37 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
         # The bear has injured.
         # Subj     Aux V_strict
 
-        verb_pool = filter_rows_for_active_zipf(self.drop_arg_transitive, "verb", fallback_on_empty=False)
-        if len(verb_pool) == 0:
-            raise LexicalGapError("No xtail-compatible drop-argument verbs")
-
         for _ in range(self.max_sample_attempts):
-            V_non_strict = choice(verb_pool)
-            subj_pool = filter_rows_for_active_zipf(
-                get_matches_of(V_non_strict, "arg_1", self.safe_subjects), "noun", fallback_on_empty=False
-            )
-            if len(subj_pool) == 0:
+            try:
+                V_non_strict = choose_row_for_active_zipf(
+                    self.drop_arg_transitive,
+                    "verb",
+                    fallback_on_empty=False,
+                    error_message="No xtail-compatible drop-argument verbs",
+                    minimum_candidates=10,
+                )
+                Subj = N_to_DP_mutate(choose_matching_row(
+                    V_non_strict,
+                    "arg_1",
+                    self.safe_subjects,
+                    "noun",
+                    fallback_on_empty=False,
+                    error_message="No regime-compatible drop-argument subject",
+                    minimum_candidates=10,
+                ))
+                Aux = return_aux(V_non_strict, Subj)
+                V_strict = choose_matched_by_row(
+                    Subj,
+                    "arg_1",
+                    get_matches_of(Aux, "arg_2", self.drop_arg_bad_transitive),
+                    "verb",
+                    fallback_on_empty=False,
+                    error_message="No regime-compatible strict transitive contrast verb",
+                    minimum_candidates=10,
+                )
+                break
+            except LexicalGapError:
                 continue
-            Subj = N_to_DP_mutate(choice(subj_pool))
-            Aux = return_aux(V_non_strict, Subj)
-            V_strict_pool = filter_rows_for_active_zipf(
-                get_matched_by(Subj, "arg_1", get_matches_of(Aux, "arg_2", self.drop_arg_bad_transitive)),
-                "verb",
-                fallback_on_empty=False,
-            )
-            if len(V_strict_pool) == 0:
-                continue
-            V_strict = choice(V_strict_pool)
-            break
         else:
             raise LexicalGapError("No xtail-compatible drop_argument pair found after bounded retries")
 
