@@ -39,12 +39,14 @@ class Generator(data_generator.BenchmarkGenerator):
                     "adjective",
                     fallback_on_empty=False,
                     error_message="No regime-compatible tough adjectives",
+                    minimum_candidates=10,
                 )
                 A_raising = choose_row_for_active_zipf(
                     self.raising_preds,
                     "adjective",
                     fallback_on_empty=False,
                     error_message="No regime-compatible raising adjectives",
+                    minimum_candidates=10,
                 )
                 V = choose_matching_row(
                     A_tough,
@@ -53,6 +55,7 @@ class Generator(data_generator.BenchmarkGenerator):
                     "verb",
                     fallback_on_empty=False,
                     error_message="No regime-compatible tough_vs_raising_1 verb",
+                    minimum_candidates=10,
                 )
                 subj = N_to_DP_mutate(choose_matching_row(
                     V,
@@ -61,6 +64,7 @@ class Generator(data_generator.BenchmarkGenerator):
                     "noun",
                     fallback_on_empty=False,
                     error_message="No regime-compatible tough_vs_raising_1 subject",
+                    minimum_candidates=10,
                 ))
                 be = return_copula(subj)
                 break

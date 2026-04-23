@@ -41,18 +41,21 @@ class Generator(data_generator.BenchmarkGenerator):
                     "adjective",
                     fallback_on_empty=False,
                     error_message="No regime-compatible tough adjectives",
+                    minimum_candidates=10,
                 )
                 A_raising = choose_row_for_active_zipf(
                     self.raising_preds,
                     "adjective",
                     fallback_on_empty=False,
                     error_message="No regime-compatible raising adjectives",
+                    minimum_candidates=10,
                 )
                 V = choose_row_for_active_zipf(
                     self.safe_verbs,
                     "verb",
                     fallback_on_empty=False,
                     error_message="No regime-compatible tough_vs_raising_2 verbs",
+                    minimum_candidates=10,
                 )
                 subj = N_to_DP_mutate(choose_matching_row(
                     V,
@@ -61,6 +64,7 @@ class Generator(data_generator.BenchmarkGenerator):
                     "noun",
                     fallback_on_empty=False,
                     error_message="No regime-compatible tough_vs_raising_2 subject",
+                    minimum_candidates=10,
                 ))
                 args = verb_args_from_verb(V, subj=subj)
                 VP = V_to_VP_mutate(V, aux=False, args=args)
