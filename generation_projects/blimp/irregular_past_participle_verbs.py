@@ -18,6 +18,14 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
         self.all_trans_en_verbs = get_all("special_en_form", "1", all_transitive_verbs)
         self.all_intrans_en_verbs = get_all("special_en_form", "1", all_intransitive_verbs)
 
+    def _has_distinct_past_participle(self, verb):
+        family = get_all("root", verb["root"])
+        past = get_all("past", "1", family)
+        participle = get_all("en", "1", family)
+        if len(past) == 0 or len(participle) == 0:
+            return False
+        return str(past[0][0]).strip().lower() != str(participle[0][0]).strip().lower()
+
     def sample(self):
         # John ate    the pie
         # N1   V_past     N2
@@ -27,9 +35,13 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
         x = random.random()
         if x < 1 / 2:
             V_base = uniform_choice(self.all_trans_en_verbs)
+            while not self._has_distinct_past_participle(V_base):
+                V_base = uniform_choice(self.all_trans_en_verbs)
             N2 = N_to_DP_mutate(uniform_choice(filter_rows_for_active_zipf(get_matches_of(V_base, "arg_2", all_nouns), "noun")))
         else:
             V_base = uniform_choice(self.all_intrans_en_verbs)
+            while not self._has_distinct_past_participle(V_base):
+                V_base = uniform_choice(self.all_intrans_en_verbs)
             N2 = " "
 
         Verbs = get_all("root", V_base["root"])

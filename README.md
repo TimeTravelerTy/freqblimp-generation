@@ -5,25 +5,34 @@ This project includes utilities and scripts for automatic dataset generation. It
 - Jeretic, P., Warstadt, A., Bhooshan, S., & Williams, A. (2020). Are Natural Language Inference Models IMPPRESsive? Learning IMPlicature and PRESupposition. arXiv preprint arXiv:2004.03066.
 
 ## Usage
-To run a sample data generation script, navigate to the data_generation directory and run the following command:
+To run a sample BLiMP generator from the repo root:
 ```
-python -m generation_projects.benchmark.adjunct_island
+python -m generation_projects.blimp.adjunct_island
 ```
-    
-If all dependencies are present in your workspace, this will generate the adjunct_island dataset in BLiMP. Generation will take a minute to begin, after which point the progress can be watched in outputs/benchmark/adjunct_island.jsonl.
+
+For multi-paradigm runs and frequency-controlled sampling, use the shared runner:
+```
+python -m generation_projects.blimp.run transitive --output-dir outputs/blimp
+```
+
+Operational helpers that are not paradigms live under `generation_projects/blimp/tools/`, e.g.:
+```
+python -m generation_projects.blimp.tools.feasibility_probe --output feasibility.csv
+```
 
 
 ## Project Structure
 - The project contains the following packages:
-    - ```generation_projects```: scripts for generating data, organized into subdirectories by research project.
-    - ```mturk_qc```: code for carrying out Amazon mechanical turk quality control.
-    - ```outputs```: generated data, organized into subdirectories by research project.
-    - ```results```: experiment results files
-    - ```results_processing```: scripts for analyzing results and producing figures
-    - ```utils```: shared code for generation projects. Includes utilities for proecessing the vocabulary, generating constituents, manipulating generated strings, etc.
+    - ```generation_projects/blimp```: BLiMP paradigms, shared runner, overlay builder, and registry.
+    - ```generation_projects/blimp/tools```: operational scripts such as feasibility probes and one-off maintenance helpers.
+    - ```mturk_qc```: older MTurk QC assets kept for reference.
+    - ```outputs```: generated datasets, overlay artifacts, and runtime caches.
+    - ```results_processing```: scripts for analyzing results and producing figures.
+    - ```utils```: shared generation/runtime code including vocabulary queries, constituent building, and sampling policy.
 - It also contains a vocabulary file and documentation of the vocabulary:
     - ```vocabulary.csv```: the vocab file.
     - ```vocab_documentation.md```: the vocab documentation
+    - runtime `.npy` compact vocab caches are now written under `outputs/cache/runtime_vocab/` instead of cluttering the repo root
 
 
 ## Vocabulary

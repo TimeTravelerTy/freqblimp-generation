@@ -8,23 +8,27 @@ Usage (with overlay):
     FREQBLIMP_VOCAB_OVERLAY=<path>/overlay.csv \
     FREQBLIMP_OVERLAY_MANIFEST=<path>/manifest.json \
     FREQBLIMP_FREQUENCY_CACHE=<path>/frequency_cache.json \
-    python3 -m generation_projects.blimp.feasibility_probe \
+    python3 -m generation_projects.blimp.tools.feasibility_probe \
         --overlay-path <path>/overlay.csv \
         --overlay-manifest-path <path>/manifest.json \
         --frequency-cache-path <path>/frequency_cache.json \
         --output feasibility.csv
 
 Without overlay (base vocab only):
-    python3 -m generation_projects.blimp.feasibility_probe --output feasibility.csv
+    python3 -m generation_projects.blimp.tools.feasibility_probe --output feasibility.csv
 """
 
 import argparse
 import csv
-import importlib
 import os
-import signal
 import sys
 import time
+
+from generation_projects.blimp.registry import (
+    build_generator_from_stem,
+    generator_stems,
+    resolve_requested_stems,
+)
 
 # Env vars must be set BEFORE any vocab_table / constituent_building imports.
 # We parse args early and apply them before any other imports.
@@ -51,17 +55,8 @@ _REGIME_BOUNDS = {
     "xtail": (1.2, 2.2),
 }
 
-_IGNORED_UIDS = {"__init__", "run", "build_overlay", "sbatch_generator",
-                 "overlay_guards", "overlay_coverage_report", "feasibility_probe"}
-
-
 def _available_uids():
-    from pathlib import Path
-    root = Path(__file__).resolve().parent
-    return sorted(
-        p.stem for p in root.glob("*.py")
-        if p.stem not in _IGNORED_UIDS
-    )
+    return generator_stems()
 
 
 def _apply_overlay_env(args):
@@ -77,11 +72,7 @@ def _apply_overlay_env(args):
 
 
 def _build_generator(uid):
-    """Import UID module and instantiate its generator."""
-    module = importlib.import_module("generation_projects.blimp.%s" % uid)
-    if hasattr(module, "build_generator"):
-        return module.build_generator()
-    raise RuntimeError("No build_generator() in %s" % uid)
+    return build_generator_from_stem(uid)
 
 
 def _probe_uid_regime(uid, regime, attempts, timeout_s):
@@ -154,7 +145,7 @@ def main():
     args = _parse_args()
     _apply_overlay_env(args)
 
-    uids = args.uids or _available_uids()
+    uids = _available_uids() if args.uids is None else resolve_requested_stems(args.uids)
     regimes = args.regimes
 
     fieldnames = ["uid", "regime", "accepted", "failed", "attempts",

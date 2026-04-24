@@ -1,10 +1,14 @@
 from utils import data_generator
 from utils.constituent_building import *
 from utils.conjugate import *
-from utils.randomize import choice
 from utils.vocab_sets import *
+from utils.exceptions import LexicalGapError
 
-from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+from generation_projects.blimp.overlay_guards import (
+    choose_matching_row,
+    choose_row_for_active_zipf,
+    verbs_with_argument_slots,
+)
 
 class AgreementGenerator(data_generator.BenchmarkGenerator):
     def __init__(self):
@@ -15,8 +19,8 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
                          one_prefix_method=False,
                          two_prefix_method=True,
                          lexically_identical=False)
-        self.all_inanim_subj_allowing_verbs = get_matched_by(choice(all_inanimate_nouns), "arg_1", all_transitive_verbs)
-        self.all_anim_subj_allowing_verbs = get_matched_by(choice(all_animate_nouns), "arg_1", all_transitive_verbs)
+        self.all_inanim_subj_allowing_verbs = verbs_with_argument_slots(all_inanimate_nouns, all_nouns, all_transitive_verbs)
+        self.all_anim_subj_allowing_verbs = verbs_with_argument_slots(all_animate_nouns, all_nouns, all_transitive_verbs)
         self.all_anim_subj_verbs = np.setdiff1d(self.all_anim_subj_allowing_verbs, self.all_inanim_subj_allowing_verbs)
         self.dets = ['the', 'some']
         self.max_sample_attempts = 512
@@ -27,39 +31,50 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
         # The table talked to the boy
         # N1_bad    V1        N2
 
-        verb_pool = filter_rows_for_active_zipf(self.all_anim_subj_verbs, "verb", fallback_on_empty=False)
-        if len(verb_pool) == 0:
-            raise LexicalGapError("No xtail-compatible animate-subject transitive verbs")
-
         for _ in range(self.max_sample_attempts):
-            V1 = choice(verb_pool)
-            N1_good_candidates = filter_rows_for_active_zipf(
-                get_matches_of(V1, "arg_1", all_nouns), "noun", fallback_on_empty=False
-            )
-            if len(N1_good_candidates) == 0:
-                continue
-            N1_good = N_to_DP_mutate(choice(N1_good_candidates))
-            if N1_good['sg'] == '1':
-                N1_bad_candidates = filter_rows_for_active_zipf(
-                    get_all('sg', '1', all_inanimate_nouns), "noun", fallback_on_empty=False
+            try:
+                V1 = choose_row_for_active_zipf(
+                    self.all_anim_subj_verbs,
+                    "verb",
+                    fallback_on_empty=False,
+                    error_message="No xtail-compatible animate-subject transitive verbs",
                 )
-            elif N1_good['pl'] == '1':
-                N1_bad_candidates = filter_rows_for_active_zipf(
-                    get_all('pl', '1', all_inanimate_nouns), "noun", fallback_on_empty=False
-                )
-            else:
-                raise ValueError("Subject must be singular or plural.")
-            if len(N1_bad_candidates) == 0:
+                N1_good = N_to_DP_mutate(choose_matching_row(
+                    V1,
+                    "arg_1",
+                    all_nouns,
+                    "noun",
+                    fallback_on_empty=False,
+                    error_message="No regime-compatible animate subject",
+                ))
+                if N1_good['sg'] == '1':
+                    N1_bad = N_to_DP_mutate(choose_row_for_active_zipf(
+                        get_all('sg', '1', all_inanimate_nouns),
+                        "noun",
+                        fallback_on_empty=False,
+                        error_message="No regime-compatible inanimate singular subject",
+                    ))
+                elif N1_good['pl'] == '1':
+                    N1_bad = N_to_DP_mutate(choose_row_for_active_zipf(
+                        get_all('pl', '1', all_inanimate_nouns),
+                        "noun",
+                        fallback_on_empty=False,
+                        error_message="No regime-compatible inanimate plural subject",
+                    ))
+                else:
+                    raise ValueError("Subject must be singular or plural.")
+                N2 = N_to_DP_mutate(choose_matching_row(
+                    V1,
+                    "arg_2",
+                    all_nouns,
+                    "noun",
+                    fallback_on_empty=False,
+                    error_message="No regime-compatible object noun",
+                ))
+                V1_conj = conjugate(V1, N1_good)
+                break
+            except LexicalGapError:
                 continue
-            N1_bad = N_to_DP_mutate(choice(N1_bad_candidates))
-            N2_candidates = filter_rows_for_active_zipf(
-                get_matches_of(V1, "arg_2", all_nouns), "noun", fallback_on_empty=False
-            )
-            if len(N2_candidates) == 0:
-                continue
-            N2 = N_to_DP_mutate(choice(N2_candidates))
-            V1_conj = conjugate(V1, N1_good)
-            break
         else:
             raise LexicalGapError("No xtail-compatible animate_subject_trans pair found after bounded retries")
 

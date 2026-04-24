@@ -1,14 +1,17 @@
 .DS_Store
 .venv/
+.claude/
 CODEX_README.md
 logs/
 outputs/overlay_qc*
+outputs/full_3regimes_f027269_20260421
 outputs/inductive_biases
 outputs/tsubame_runs
 outputs/fix_smoke*/
 outputs/tmp_audit/
 outputs/qc_*/
 .idea/
+AGENTS.md
 # runtime vocab caches (auto-rebuilt, never commit)
 vocabulary.csv.runtime.compact.v2.npy
 vocabulary_overlay.csv.runtime.compact.v2.npy

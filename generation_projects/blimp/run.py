@@ -1,24 +1,18 @@
 import argparse
 import concurrent.futures
-import importlib
-import inspect
 import json
 import os
-import re
 import time
 import traceback
 from pathlib import Path
 
+from generation_projects.blimp.registry import (
+    build_generator_from_stem,
+    declared_uid_for_stem,
+    generator_stems,
+    resolve_requested_stems,
+)
 from utils.randomize import SamplingPolicy, configure_sampling_policy, set_trace_recording_enabled
-
-
-_DECLARED_UID_CACHE = {}
-_DECLARED_UID_PATTERN = re.compile(r"""uid\s*=\s*['"]([^'"]+)['"]""")
-
-
-def _data_generator_module():
-    from utils import data_generator
-    return data_generator
 
 
 def _clear_query_caches():
@@ -43,35 +37,14 @@ def _rss_mb():
 
 
 def _available_uids():
-    root = Path(__file__).resolve().parent
-    ignored = {"__init__", "run", "build_overlay", "sbatch_generator"}
-    return sorted(
-        path.stem
-        for path in root.glob("*.py")
-        if path.stem not in ignored
-    )
-
-
-def _declared_uid_for_module(uid):
-    if uid not in _DECLARED_UID_CACHE:
-        declared_uid = uid
-        module_path = Path(__file__).resolve().parent / ("%s.py" % uid)
-        try:
-            text = module_path.read_text()
-        except Exception:
-            text = ""
-        match = _DECLARED_UID_PATTERN.search(text)
-        if match:
-            declared_uid = match.group(1)
-        _DECLARED_UID_CACHE[uid] = declared_uid
-    return _DECLARED_UID_CACHE[uid]
+    return generator_stems()
 
 
 def _predicted_output_path(uid, config):
     if config["output_path"]:
         return config["output_path"]
     output_dir = Path(config["output_dir"])
-    return str(output_dir / ("%s.jsonl" % _declared_uid_for_module(uid)))
+    return str(output_dir / ("%s.jsonl" % declared_uid_for_stem(uid)))
 
 
 def _is_nonempty_output(path):
@@ -145,28 +118,6 @@ def _policy_from_config(config):
     )
 
 
-def _build_generator(module):
-    data_generator = _data_generator_module()
-    if hasattr(module, "build_generator"):
-        return module.build_generator()
-    generator_classes = []
-    for _name, value in inspect.getmembers(module, inspect.isclass):
-        if value in {
-            data_generator.Generator,
-            data_generator.BenchmarkGenerator,
-            data_generator.ScalarImplicatureGenerator,
-            data_generator.PresuppositionGenerator,
-        }:
-            continue
-        if issubclass(value, data_generator.Generator):
-            generator_classes.append(value)
-    if not generator_classes:
-        raise RuntimeError("No generator class found in module %s" % module.__name__)
-    if len(generator_classes) > 1:
-        generator_classes.sort(key=lambda cls: cls.__name__)
-    return generator_classes[0]()
-
-
 def _run_uid(uid, config):
     started = time.time()
     predicted_output_path = _predicted_output_path(uid, config)
@@ -178,9 +129,8 @@ def _run_uid(uid, config):
             "duration_seconds": round(time.time() - started, 3),
             "output_path": predicted_output_path,
         }
-    module = importlib.import_module("generation_projects.blimp.%s" % uid)
     configure_sampling_policy(_policy_from_config(config))
-    generator = _build_generator(module)
+    generator = build_generator_from_stem(uid)
     if config["output_path"]:
         if config.get("skip_existing") and _is_nonempty_output(config["output_path"]):
             print("[skip-existing] %s: %s (%d bytes)" % (uid, config["output_path"], os.path.getsize(config["output_path"])))
@@ -275,7 +225,10 @@ def _write_summary(config, requested_uids, results):
 def _requested_uids(args):
     if "all" in args.uids:
         return _available_uids()
-    return args.uids
+    try:
+        return resolve_requested_stems(args.uids)
+    except KeyError as exc:
+        raise SystemExit("Unknown BLiMP generator: %s" % exc.args[0])
 
 
 def build_parser():

@@ -4,7 +4,7 @@ from utils.conjugate import *
 from utils.randomize import choice
 from utils.vocab_sets import *
 
-from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf, verbs_with_argument_slots
 
 class SentSubjGenerator(data_generator.BenchmarkGenerator):
     def __init__(self):
@@ -18,9 +18,11 @@ class SentSubjGenerator(data_generator.BenchmarkGenerator):
         self.all_safe_nouns = np.setdiff1d(all_nouns, all_singular_neuter_animate_nouns)
         self.all_safe_common_nouns = np.intersect1d(self.all_safe_nouns, all_common_nouns)
         self.all_transitive_ing_verbs = get_all_conjunctive([("ing", "1")], all_transitive_verbs)
-        self.all_inanim_anim_nonfinite_transitive_verbs = get_matched_by(choice(all_inanimate_nouns), "arg_1",
-                                                  get_matched_by(choice(all_animate_nouns), "arg_2",
-                                                                 all_non_finite_transitive_verbs))
+        self.all_inanim_anim_nonfinite_transitive_verbs = verbs_with_argument_slots(
+            all_inanimate_nouns,
+            all_animate_nouns,
+            all_non_finite_transitive_verbs,
+        )
 
     def sample(self):
         # Who did  Bill's  calling the president annoy?

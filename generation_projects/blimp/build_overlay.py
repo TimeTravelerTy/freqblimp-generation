@@ -7,7 +7,7 @@ from collections import defaultdict
 from pathlib import Path
 
 import wn
-from lemminflect import getInflection
+from lemminflect import getInflection, getLemma
 
 from generation_projects.blimp.overlay_guards import curated_template_expressions
 from utils.frequency import zipf_for_expression
@@ -90,6 +90,15 @@ SPECIAL_VERB_CATEGORY2 = (
     "V_raising_object",
     "V_raising_subj",
 )
+VERB_FRAME_OVERRIDES = {
+    # Keep these corrections in the tracked overlay builder because
+    # verb_inventory.json is a large ignored artifact in this repo.
+    "go": {"remove": {"trans"}, "add": set()},
+    "bulge": {"remove": {"trans"}, "add": set()},
+    "cascade": {"remove": {"trans"}, "add": set()},
+    "guzzle": {"remove": set(), "add": {"intr"}},
+    "redecorate": {"remove": set(), "add": {"intr"}},
+}
 ADJECTIVE_RELATIONAL_PREFIXES = (
     "of or relating to ",
     "relating to ",
@@ -99,6 +108,24 @@ ADJECTIVE_RELATIONAL_PREFIXES = (
     "of or belonging to ",
     "of the nature of ",
     "pertaining to ",
+)
+ADJECTIVE_BLOCKLIST = {
+    "another",
+    "more",
+    "none",
+    "undefined",
+}
+ROMAN_NUMERAL_RE = re.compile(r"^(?=[ivxlcdm]+$)[ivxlcdm]+$")
+NOUN_ENTITY_MARKERS = (
+    "continent",
+    "goddess",
+    "ocean",
+    "river",
+    "state",
+)
+NOUN_LANGUAGE_MARKERS = (
+    " dialect ",
+    " language ",
 )
 ADJECTIVE_VEGETABLE_MARKERS = (
     "vegetable",
@@ -505,6 +532,35 @@ def _noun_bundle_for_lemma(lemma, lexicon):
     return bundle, confidence, subjects
 
 
+def _noun_expression_looks_plural(lemma):
+    lemmas = tuple(str(value).strip().lower() for value in (getLemma(lemma, upos="NOUN") or ()))
+    if not lemmas:
+        return False
+    return all(value and value != lemma for value in lemmas)
+
+
+def _noun_entity_like(lemma, lexicon):
+    try:
+        synsets = wn.synsets(lemma, pos="n", lexicon=lexicon)
+    except Exception:
+        return False, []
+    definitions = [(synset.definition() or "").strip() for synset in synsets]
+    if not definitions:
+        return False, []
+    lowered = [" %s " % re.sub(r"[^a-z]+", " ", definition.lower()).strip() for definition in definitions]
+    if all(_definition_has_name_like_markers(definition) for definition in definitions):
+        return True, definitions
+    if any(any(" %s " % marker in definition for marker in NOUN_ENTITY_MARKERS) for definition in lowered):
+        return True, definitions
+    if any(any(marker in definition for marker in NOUN_LANGUAGE_MARKERS) for definition in lowered):
+        try:
+            if wn.synsets(lemma, pos="a", lexicon=lexicon) or wn.synsets(lemma, pos="s", lexicon=lexicon):
+                return True, definitions
+        except Exception:
+            return True, definitions
+    return False, definitions
+
+
 def _definition_has_name_like_markers(definition):
     definition = str(definition or "")
     if not definition:
@@ -699,6 +755,8 @@ def _adjective_definition_bundle(definition):
 
 
 def _adjective_bundle_for_lemma(lemma, lexicon):
+    if lemma in ADJECTIVE_BLOCKLIST or ROMAN_NUMERAL_RE.fullmatch(lemma):
+        return None, 0.0, []
     synsets = _adjective_synsets(lemma, lexicon)
     if not synsets:
         return None, 0.0, []
@@ -743,6 +801,10 @@ def _load_verb_inventory(path):
             continue
         frame_values = defaultdict(set)
         frame_types = {frame.get("type") for frame in entry.get("frames", []) if isinstance(frame, dict)}
+        override = VERB_FRAME_OVERRIDES.get(lemma)
+        if override is not None:
+            frame_types.difference_update(override["remove"])
+            frame_types.update(override["add"])
         for frame in entry.get("frames", []):
             if not isinstance(frame, dict):
                 continue
@@ -756,14 +818,15 @@ def _load_verb_inventory(path):
     return entries
 
 
-def _core_template_key(frame_types):
+def _core_template_keys(frame_types):
     has_intr = "intr" in frame_types
     has_trans = "trans" in frame_types
-    if has_intr and not has_trans:
-        return "intr"
-    if has_trans and not has_intr:
-        return "trans"
-    return None
+    keys = []
+    if has_intr:
+        keys.append("intr")
+    if has_trans:
+        keys.append("trans")
+    return tuple(keys)
 
 
 def _core_verb_template_index(rows):
@@ -838,12 +901,16 @@ def _template_suffix_token(template_family):
 
 
 def _special_verb_candidate_keys(entry):
+    lemma = str(entry.get("lemma", "")).strip().lower()
     frame_types = set(entry.get("frame_types") or ())
     keys = []
-    if "intr" in frame_types or "trans" in frame_types:
-        keys.extend(("V_raising_subj", "V_control_subj"))
-    if "trans" in frame_types:
-        keys.extend(("V_raising_object", "V_control_object"))
+    for category_2 in SPECIAL_VERB_CATEGORY2:
+        if lemma not in set(curated_template_expressions(category_2)):
+            continue
+        if category_2 in {"V_raising_subj", "V_control_subj"} and ("intr" in frame_types or "trans" in frame_types):
+            keys.append(category_2)
+        elif category_2 in {"V_raising_object", "V_control_object"} and "trans" in frame_types:
+            keys.append(category_2)
     return keys
 
 
@@ -970,6 +1037,9 @@ def build_overlay(args):
             if lemma.endswith("ics"):
                 _record_rejection(audit, "noun", lemma, "pluralia_tantum_like_surface")
                 continue
+            if _noun_expression_looks_plural(lemma):
+                _record_rejection(audit, "noun", lemma, "plural_looking_singular_surface")
+                continue
             if "_" in lemma or "-" in lemma or " " in lemma:
                 _record_rejection(audit, "noun", lemma, "non_simple_surface")
                 continue
@@ -994,6 +1064,17 @@ def build_overlay(args):
                     bundle=bundle,
                     bundle_confidence=round(bundle_confidence, 3),
                     subjects=subjects,
+                )
+                continue
+            entity_like, definitions = _noun_entity_like(lemma, args.lexicon)
+            if entity_like:
+                _record_rejection(
+                    audit,
+                    "noun",
+                    lemma,
+                    "entity_or_language_like",
+                    zipf=zipf_value,
+                    definitions=definitions[:3],
                 )
                 continue
             if bundle == "person":
@@ -1079,34 +1160,28 @@ def build_overlay(args):
                 _record_rejection(audit, "verb", lemma, "above_zipf_max", zipf=zipf_value)
                 continue
             special_keys = _special_verb_candidate_keys(entry)
-            suffix_token = None
-            template_key = _core_template_key(entry["frame_types"])
-            families_for_key = None
-            if template_key is not None:
-                families_for_key = template_index.get(template_key)
+            core_template_bundles = []
+            core_template_keys = _core_template_keys(entry["frame_types"])
+            if core_template_keys:
+                for template_key in core_template_keys:
+                    core_template_bundles.append((template_key, None, template_index.get(template_key)))
             elif entry["frame_values"].get("intr_pp"):
                 for prep in entry["frame_values"]["intr_pp"]:
                     if intr_pp_template_index.get(prep):
-                        template_key = "intr_pp"
-                        suffix_token = prep
-                        families_for_key = intr_pp_template_index[prep]
+                        core_template_bundles.append(("intr_pp", prep, intr_pp_template_index[prep]))
                         break
             elif entry["frame_values"].get("intr_particle"):
                 for particle in entry["frame_values"]["intr_particle"]:
                     if intr_particle_template_index.get(particle):
-                        template_key = "intr_particle"
-                        suffix_token = particle
-                        families_for_key = intr_particle_template_index[particle]
+                        core_template_bundles.append(("intr_particle", particle, intr_particle_template_index[particle]))
                         break
             elif entry["frame_values"].get("trans_particle"):
                 for particle in entry["frame_values"]["trans_particle"]:
                     if trans_particle_template_index.get(particle):
-                        template_key = "trans_particle"
-                        suffix_token = particle
-                        families_for_key = trans_particle_template_index[particle]
+                        core_template_bundles.append(("trans_particle", particle, trans_particle_template_index[particle]))
                         break
-            if template_key is None and not special_keys:
-                reason = "ambiguous_core_frames" if "intr" in entry["frame_types"] and "trans" in entry["frame_types"] else "unsupported_frame_types"
+            if not core_template_bundles and not special_keys:
+                reason = "unsupported_frame_types"
                 if entry["frame_values"].get("ditrans_pp"):
                     reason = "unsupported_ditrans_pp"
                 _record_rejection(
@@ -1119,58 +1194,54 @@ def build_overlay(args):
                     frame_values=entry["frame_values"],
                 )
                 continue
-            if template_key is not None and not families_for_key:
-                _record_rejection(
-                    audit,
-                    "verb",
-                    lemma,
-                    "missing_frame_template",
-                    zipf=zipf_value,
-                    bundle=template_key,
-                    frame_values=entry["frame_values"],
-                )
-                continue
-            sig_families = list(sig_index.get(template_key, {}).values()) if template_key is not None else []
-            if template_key is not None and not sig_families and families_for_key:
-                # Multiword families are indexed separately, so preserve the old fallback.
-                sig_families = [families_for_key[0]]
-            if args.verb_templates_per_lemma > 0:
-                sig_families = sig_families[:args.verb_templates_per_lemma]
             admitted_any_sig = False
             saw_inflection_failure = False
-            for sig_family in sig_families:
-                template_label = sig_family[0]["root"]
-                new_rows = _make_verb_rows(lemma, sig_family, template_label, suffix_token=suffix_token)
-                new_rows = _apply_argument_structure_overrides(new_rows, entry)
-                if not new_rows:
-                    saw_inflection_failure = True
+            attempted_core_bundles = []
+            missing_core_templates = []
+            for template_key, suffix_token, families_for_key in core_template_bundles:
+                attempted_core_bundles.append(template_key)
+                if not families_for_key:
+                    missing_core_templates.append(template_key)
                     continue
-                new_signatures = [_row_signature_from_dict(row) for row in new_rows]
-                if any(signature in existing_signatures for signature in new_signatures):
-                    continue
-                overlay_rows.extend(new_rows)
-                admitted_any_sig = True
-                _record_admission(
-                    audit,
-                    "verb",
-                    lemma,
-                    zipf_value,
-                    template_label,
-                    template_key,
-                    len(new_rows),
-                )
-                for row, signature in zip(new_rows, new_signatures):
-                    manifest_rows.append({
-                        "row_signature": signature,
-                        "source": "overlay",
-                        "source_lexicon": "verb_inventory",
-                        "source_lemma": lemma,
-                        "inherited_template": template_label,
-                        "validation_status": "validated",
-                        "overlay_type": "verb",
-                        "bundle": template_key,
-                    })
-                    existing_signatures.add(signature)
+                sig_families = list(sig_index.get(template_key, {}).values()) if template_key in sig_index else []
+                if not sig_families and families_for_key:
+                    # Multiword families are indexed separately, so preserve the old fallback.
+                    sig_families = [families_for_key[0]]
+                if args.verb_templates_per_lemma > 0:
+                    sig_families = sig_families[:args.verb_templates_per_lemma]
+                for sig_family in sig_families:
+                    template_label = sig_family[0]["root"]
+                    new_rows = _make_verb_rows(lemma, sig_family, template_label, suffix_token=suffix_token)
+                    new_rows = _apply_argument_structure_overrides(new_rows, entry)
+                    if not new_rows:
+                        saw_inflection_failure = True
+                        continue
+                    new_signatures = [_row_signature_from_dict(row) for row in new_rows]
+                    if any(signature in existing_signatures for signature in new_signatures):
+                        continue
+                    overlay_rows.extend(new_rows)
+                    admitted_any_sig = True
+                    _record_admission(
+                        audit,
+                        "verb",
+                        lemma,
+                        zipf_value,
+                        template_label,
+                        template_key,
+                        len(new_rows),
+                    )
+                    for row, signature in zip(new_rows, new_signatures):
+                        manifest_rows.append({
+                            "row_signature": signature,
+                            "source": "overlay",
+                            "source_lexicon": "verb_inventory",
+                            "source_lemma": lemma,
+                            "inherited_template": template_label,
+                            "validation_status": "validated",
+                            "overlay_type": "verb",
+                            "bundle": template_key,
+                        })
+                        existing_signatures.add(signature)
             for special_key in special_keys:
                 special_families = list(special_template_index.get(special_key, ()))
                 if args.verb_templates_per_lemma > 0:
@@ -1209,10 +1280,35 @@ def build_overlay(args):
                         })
                         existing_signatures.add(signature)
             if not admitted_any_sig:
+                if missing_core_templates and len(missing_core_templates) == len(core_template_bundles):
+                    _record_rejection(
+                        audit,
+                        "verb",
+                        lemma,
+                        "missing_frame_template",
+                        zipf=zipf_value,
+                        bundle=",".join(missing_core_templates),
+                        frame_values=entry["frame_values"],
+                    )
+                    continue
                 if saw_inflection_failure:
-                    _record_rejection(audit, "verb", lemma, "inflection_failed", zipf=zipf_value, bundle=template_key or "special")
+                    _record_rejection(
+                        audit,
+                        "verb",
+                        lemma,
+                        "inflection_failed",
+                        zipf=zipf_value,
+                        bundle=",".join(attempted_core_bundles) if attempted_core_bundles else "special",
+                    )
                 else:
-                    _record_rejection(audit, "verb", lemma, "family_collision", zipf=zipf_value, bundle=template_key or "special")
+                    _record_rejection(
+                        audit,
+                        "verb",
+                        lemma,
+                        "family_collision",
+                        zipf=zipf_value,
+                        bundle=",".join(attempted_core_bundles) if attempted_core_bundles else "special",
+                    )
             else:
                 admitted += 1
             if admitted >= args.verb_limit:

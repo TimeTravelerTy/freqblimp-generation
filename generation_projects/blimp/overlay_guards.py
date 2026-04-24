@@ -25,8 +25,7 @@ from utils.vocab_table import (
 _SUBJECT_RAISING_VERBS = (
     "seem", "appear", "happen", "tend", "look", "prove", "remain", "continue",
     "begin", "start", "stop", "fail", "threaten", "promise", "cease", "come",
-    "grow", "commence", "chance", "transpire", "hap", "bid fair", "loom", "deserve",
-    "turn out",
+    "grow", "commence", "chance", "deserve", "turn out",
 )
 
 _OBJECT_RAISING_VERBS = (
@@ -597,6 +596,20 @@ def _curated_rows_for_expression_families(table,
     )
 
 
+def _exclude_ing_en_rows(table):
+    if len(table) == 0:
+        return table
+    mask = (np.asarray(table["ing"], dtype=str) != "1") & (np.asarray(table["en"], dtype=str) != "1")
+    return table[mask]
+
+
+def _exclude_ing_surface_rows(table):
+    if len(table) == 0:
+        return table
+    expr = np.asarray(table["expression"], dtype=str)
+    return table[~np.char.endswith(expr, "ing")]
+
+
 def _exclude_expression_families(table, expressions: Sequence[str]):
     if len(table) == 0:
         return table
@@ -790,12 +803,13 @@ def drop_argument_bad_verb_rows():
 
 
 def finite_clause_embedding_verb_rows():
-    return _curated_rows_for_expression_families(
+    rows = _curated_rows_for_expression_families(
         get_all("category_2", "V_embedding"),
         _FINITE_CLAUSE_EMBEDDING_VERBS,
         "verb",
         expand_inflections=True,
     )
+    return _exclude_ing_surface_rows(_exclude_ing_en_rows(rows))
 
 
 def tough_vs_raising_2_outer_verb_rows():
@@ -933,4 +947,8 @@ def curated_template_expressions(category_2: str) -> Sequence[str]:
         return _SUBJECT_RAISING_VERBS
     if category_2 == "V_raising_object":
         return _OBJECT_RAISING_VERBS
+    if category_2 == "V_control_subj":
+        return _CONTROL_SUBJECT_VERBS
+    if category_2 == "V_control_object":
+        return _CONTROL_OBJECT_VERBS
     return ()
