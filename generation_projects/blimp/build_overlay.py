@@ -1350,6 +1350,7 @@ def build_overlay(args):
                     zipf=zipf_value,
                     definitions=definitions[:3],
                 )
+                continue
             elif bundle_confidence < args.adjective_bundle_min_confidence:
                 _record_rejection(
                     audit,
@@ -1361,6 +1362,7 @@ def build_overlay(args):
                     bundle_confidence=round(bundle_confidence, 3),
                     definitions=definitions[:3],
                 )
+                continue
             template_rows = adjective_templates.get(bundle, ())
             template_row = _choose_template(template_rows)
             admitted_any = False
