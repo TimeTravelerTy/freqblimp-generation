@@ -112,7 +112,8 @@ class Generator(data_generator.BenchmarkGenerator):
         Adj = choose_row_for_active_zipf(
             self.clause_embedding_adjectives,
             "adjective",
-            fallback_on_empty=False,
+            fallback_on_empty=True,
+            minimum_candidates=10,
             error_message="No regime-compatible expletive-it adjective",
         )
         sentence = self._make_safe_clause()
