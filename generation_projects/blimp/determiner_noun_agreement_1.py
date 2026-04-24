@@ -4,7 +4,10 @@ from utils.conjugate import *
 from utils.randomize import choice
 from utils.vocab_sets import *
 
-from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+from generation_projects.blimp.overlay_guards import (
+    filter_plural_looking_singular_nouns,
+    filter_rows_for_active_zipf,
+)
 
 
 class DetNGenerator(data_generator.BenchmarkGenerator):
@@ -20,7 +23,10 @@ class DetNGenerator(data_generator.BenchmarkGenerator):
         self.all_missingPluralSing_nouns = get_all_conjunctive([("pluralform", ""), ("singularform", "")])
         self.all_irregular_nouns = get_all("irrpl", "1")
         self.all_unusable_nouns = np.union1d(self.all_null_plural_nouns, np.union1d(self.all_missingPluralSing_nouns, self.all_irregular_nouns))
-        self.all_pluralizable_nouns = np.setdiff1d(all_common_nouns, self.all_unusable_nouns)
+        self.safe_nouns = filter_plural_looking_singular_nouns(all_nouns)
+        self.all_pluralizable_nouns = filter_plural_looking_singular_nouns(
+            np.setdiff1d(all_common_nouns, self.all_unusable_nouns)
+        )
 
     def sample(self):
         # John cleaned this table.
@@ -30,7 +36,7 @@ class DetNGenerator(data_generator.BenchmarkGenerator):
         # N1   V1      Dem  N2_mismatch
 
         V1 = choice(filter_rows_for_active_zipf(all_transitive_verbs, "verb"))
-        N1 = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V1, "arg_1", all_nouns), "noun")))
+        N1 = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V1, "arg_1", self.safe_nouns), "noun")))
         N2_match = choice(filter_rows_for_active_zipf(get_matches_of(V1, "arg_2", self.all_pluralizable_nouns), "noun"))
         Dem = choice(get_matched_by(N2_match, "arg_1", all_demonstratives))
         if N2_match['pl'] == "1":
