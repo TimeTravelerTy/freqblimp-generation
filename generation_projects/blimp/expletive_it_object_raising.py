@@ -6,8 +6,10 @@ from utils.exceptions import LexicalGapError
 
 from generation_projects.blimp.overlay_guards import (
     clausal_it_adjective_rows,
+    choose_matching_row,
     choose_row_for_active_zipf,
     control_object_verb_rows,
+    filter_plural_looking_singular_nouns,
     object_raising_verb_rows,
     rows_matching_inflection,
 )
@@ -24,6 +26,11 @@ class Generator(data_generator.BenchmarkGenerator):
         self.clause_embedding_adjectives = clausal_it_adjective_rows()
         self.raising_verbs = object_raising_verb_rows()
         self.control_verbs = control_object_verb_rows()
+        self.safe_nominals = filter_plural_looking_singular_nouns(all_nominals)
+        self.safe_clause_verbs = table_union1d(
+            get_all("category", "S\\NP", all_verbs),
+            get_all("category", "(S\\NP)/NP", all_verbs),
+        )
         self.compatible_pairs = []
         self._subject_pool_cache = {}
         for V_raise in self.raising_verbs:
@@ -37,9 +44,45 @@ class Generator(data_generator.BenchmarkGenerator):
         cached = self._subject_pool_cache.get(key)
         if cached is not None:
             return cached
-        subj_pool = get_matches_of(V_raise, "arg_1", get_matches_of(V_control, "arg_1"))
+        subj_pool = filter_plural_looking_singular_nouns(
+            get_matches_of(V_raise, "arg_1", get_matches_of(V_control, "arg_1"))
+        )
         self._subject_pool_cache[key] = subj_pool
         return subj_pool
+
+    def _make_safe_clause(self):
+        for _ in range(128):
+            try:
+                V_emb = choose_row_for_active_zipf(
+                    self.safe_clause_verbs,
+                    "verb",
+                    fallback_on_empty=False,
+                    error_message="No regime-compatible expletive-it embedded verb",
+                )
+                Subj = N_to_DP_mutate(choose_matching_row(
+                    V_emb,
+                    "arg_1",
+                    self.safe_nominals,
+                    "noun",
+                    fallback_on_empty=False,
+                    error_message="No regime-compatible expletive-it embedded subject",
+                ))
+                Aux = return_aux(V_emb, Subj)
+                pieces = [Subj[0], Aux[0], V_emb[0]]
+                if V_emb["category"] == "(S\\NP)/NP":
+                    Obj = N_to_DP_mutate(choose_matching_row(
+                        V_emb,
+                        "arg_2",
+                        self.safe_nominals,
+                        "noun",
+                        fallback_on_empty=False,
+                        error_message="No regime-compatible expletive-it embedded object",
+                    ))
+                    pieces.append(Obj[0])
+                return remove_extra_whitespace(" ".join(pieces))
+            except LexicalGapError:
+                continue
+        raise LexicalGapError("No regime-compatible expletive-it embedded clause found")
 
     def sample(self):
         # John   may        consider it to be unfortunate that Bill has left.
@@ -72,8 +115,7 @@ class Generator(data_generator.BenchmarkGenerator):
             fallback_on_empty=False,
             error_message="No regime-compatible expletive-it adjective",
         )
-        V_emb = choice(all_verbs)
-        sentence = make_sentence_from_verb(V_emb)
+        sentence = self._make_safe_clause()
 
         data = {
             "sentence_good": "%s %s %s it to be %s that %s." % (m_subj[0], Aux[0], V_raise[0], Adj[0], sentence),

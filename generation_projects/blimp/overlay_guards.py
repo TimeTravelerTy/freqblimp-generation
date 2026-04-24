@@ -1,5 +1,7 @@
+import json
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
 from typing import Iterable, Optional, Sequence
 
 import numpy as np
@@ -28,25 +30,31 @@ _SUBJECT_RAISING_VERBS = (
 )
 
 _OBJECT_RAISING_VERBS = (
-    "want", "need", "like", "expect", "hate", "prefer", "mean", "wish", "imagine",
-    "guess", "suppose", "reckon", "believe", "find", "feel", "know", "consider",
-    "allow", "cause", "understand", "assume", "presume", "suspect", "claim",
-    "maintain", "declare", "state", "report", "judge", "hold", "deem", "view",
-    "perceive", "observe", "note", "reveal", "prove", "show", "require", "permit",
-    "order", "command", "forbid", "authorize", "intend", "discover", "estimate",
-    "calculate", "acknowledge", "admit", "affirm", "allege", "anticipate",
-    "apprehend", "ascertain", "assert", "avow", "certify", "conceive", "conjecture",
-    "deduce", "demonstrate", "determine", "discern", "enable", "envisage",
-    "envision", "foresee", "grant", "guarantee", "hypothesize", "infer", "posit",
-    "postulate", "predict", "proclaim", "pronounce", "recognize", "recollect",
-    "remember", "stipulate", "surmise", "verify", "warrant",
+    "anticipate", "believe", "consider", "declare", "determine", "discover",
+    "expect", "find", "judge", "need", "predict", "prefer", "want",
 )
 
 _CONTROL_OBJECT_VERBS = (
-    "advise", "ask", "beg", "command", "commission", "compel", "convince", "dare",
-    "encourage", "entice", "force", "induce", "motivate", "obligate", "oblige",
-    "order", "persuade", "press", "pressure", "prod", "prompt", "push", "require",
+    "advise", "ask", "beg", "commission", "compel", "convince", "dare",
+    "encourage", "entice", "induce", "motivate", "obligate", "oblige",
+    "persuade", "press", "pressure", "prod", "prompt", "push",
     "spur", "sway", "tempt", "urge",
+)
+
+_PASSIVE_BAD_VERB_BLOCKLIST = (
+    # Otherwise intransitive inventory entries whose participles can surface as
+    # acceptable adjectival or transitive passives in the passive templates.
+    "appeal", "decease", "expire", "piss", "speak",
+)
+
+_PASSIVE_GOOD_VERB_BLOCKLIST = (
+    # Lemminflect can admit bare-looking participles here ("was bust").
+    "bust",
+)
+
+_INTRANSITIVE_CONTRAST_BLOCKLIST = _PASSIVE_BAD_VERB_BLOCKLIST + (
+    # Direct-object uses are common enough to blur transitive/passive contrasts.
+    "side",
 )
 
 _CONTROL_SUBJECT_VERBS = (
@@ -97,6 +105,19 @@ _TOUGH_ADJECTIVES = (
     "hazardous", "treacherous", "perilous", "formidable", "loathsome", "repulsive",
     "irksome", "wearisome", "cumbersome", "unsettling", "unnerving", "disarming",
     "invigorating", "uplifting", "edifying", "fruitless", "futile",
+)
+
+_CLAUSAL_IT_ADJECTIVES = (
+    "a shame", "acceptable", "amusing", "apparent", "bad", "boring", "clear",
+    "cool", "expected", "fortunate", "funny", "good", "important",
+    "interesting", "lucky", "natural", "nice", "normal", "not so amusing",
+    "not so bad", "not so clear", "not so funny", "not so good",
+    "not so important", "not so interesting", "not so nice", "not so normal",
+    "not so obvious", "not so pleasant", "not so surprising", "not so weird",
+    "noteworthy", "obvious", "odd", "okay", "pleasant", "sad", "strange",
+    "surprising", "too bad", "unexpected", "unfortunate", "uninteresting",
+    "unlucky", "unpleasant", "unsurprising", "unusual", "weird",
+    "worth mentioning", "worth noting", "worth saying",
 )
 
 _FINITE_CLAUSE_EMBEDDING_VERBS = (
@@ -282,13 +303,100 @@ def overlay_enabled() -> bool:
 
 _ZIPF_FILTER_CACHE: dict = {}
 _CURATED_ZIPF_MIN_CANDIDATES = 10
+_VERB_INVENTORY_PATH = Path(__file__).with_name("verb_inventory.json")
 
 
 def _clear_zipf_filter_cache():
     _ZIPF_FILTER_CACHE.clear()
+    _transitive_source_lemmas.cache_clear()
+    _inventory_core_frame_lemmas.cache_clear()
+    _inventory_core_intr_lemmas.cache_clear()
+    _inventory_core_trans_lemmas.cache_clear()
 
 
 register_query_cache_clear_hook(_clear_zipf_filter_cache)
+
+
+def _source_lemma_for_row(row) -> str:
+    root = str(row["root"]).strip() if "root" in row.dtype.names else ""
+    if "_overlay_" in root:
+        root = root.split("_overlay_", 1)[0]
+    elif "_" in root:
+        stem, suffix = root.rsplit("_", 1)
+        if "\\" in suffix or "/" in suffix or suffix in {"S", "NP", "N"}:
+            root = stem
+    return (root or str(row["expression"]).strip()).replace("_", " ")
+
+
+@lru_cache(maxsize=1)
+def _transitive_source_lemmas():
+    transitive_rows = get_all("category", "(S\\NP)/NP", get_all("verb", "1"))
+    return frozenset(_source_lemma_for_row(row) for row in transitive_rows)
+
+
+def exclude_transitive_source_lemmas(table):
+    """Keep only rows whose source lemma has no transitive frame in the active vocab.
+
+    Overlay verb rows inherit many BLiMP template signatures per coarse frame.
+    A lemma such as "dominate" can therefore have both a transitive/passive
+    template and a strict-intransitive template. Row-level strict_intrans=1 is
+    not enough for paradigms that require a genuinely non-transitive contrast.
+    """
+    if len(table) == 0:
+        return table
+    transitive_lemmas = _transitive_source_lemmas()
+    keep = np.fromiter(
+        (_source_lemma_for_row(row) not in transitive_lemmas for row in table),
+        dtype=bool,
+        count=len(table),
+    )
+    return table[keep]
+
+
+@lru_cache(maxsize=1)
+def _inventory_core_frame_lemmas():
+    if not _VERB_INVENTORY_PATH.exists():
+        return frozenset(), frozenset()
+    with _VERB_INVENTORY_PATH.open() as handle:
+        payload = json.load(handle)
+    entries = payload.get("entries", payload) if isinstance(payload, dict) else payload
+    core_intr = set()
+    core_trans = set()
+    for entry in entries:
+        lemma = str(entry.get("lemma", "")).strip().lower()
+        if not lemma:
+            continue
+        for frame in entry.get("frames", ()):
+            kind = frame.get("type") or frame.get("kind")
+            if kind == "intr":
+                core_intr.add(lemma)
+            elif kind == "trans" or (isinstance(kind, str) and kind.startswith("trans")):
+                core_trans.add(lemma)
+    return frozenset(core_intr), frozenset(core_trans)
+
+
+@lru_cache(maxsize=1)
+def _inventory_core_intr_lemmas():
+    return _inventory_core_frame_lemmas()[0]
+
+
+@lru_cache(maxsize=1)
+def _inventory_core_trans_lemmas():
+    return _inventory_core_frame_lemmas()[1]
+
+
+def exclude_source_lemmas(table, lemmas):
+    if len(table) == 0:
+        return table
+    lemma_set = set(lemmas)
+    if not lemma_set:
+        return table
+    keep = np.fromiter(
+        (_source_lemma_for_row(row).lower() not in lemma_set for row in table),
+        dtype=bool,
+        count=len(table),
+    )
+    return table[keep]
 
 
 def _zipf_distance_from_window(zipf_values, lower, upper):
@@ -590,10 +698,11 @@ def tough_adjective_rows():
 
 def clausal_it_adjective_rows():
     rows = adjective_rows_for_category("Adj_clausal")
-    return filter_rows_for_active_zipf(
-        rows[rows["arg_1"] == "expression=it"],
+    rows = rows[rows["arg_1"] == "expression=it"]
+    return _curated_rows_for_expression_families(
+        rows,
+        _CLAUSAL_IT_ADJECTIVES,
         "adjective",
-        fallback_on_empty=True,
         minimum_candidates=_CURATED_ZIPF_MIN_CANDIDATES,
     )
 
@@ -633,6 +742,8 @@ def _single_token_verb_rows(table):
 
 def passivizable_participle_rows():
     rows = get_all("passive", "1", get_all("category", "(S\\NP)/NP", get_all("en", "1", get_all("verb", "1"))))
+    rows = exclude_source_lemmas(rows, _inventory_core_intr_lemmas())
+    rows = exclude_source_lemmas(rows, _PASSIVE_GOOD_VERB_BLOCKLIST)
     return _single_token_verb_rows(rows)
 
 
@@ -642,7 +753,27 @@ def nonpassivizable_participle_rows():
         "0",
         get_all("strict_intrans", "1", get_all("category", "S\\NP", get_all("en", "1", get_all("verb", "1")))),
     )
+    rows = exclude_transitive_source_lemmas(rows)
+    rows = exclude_source_lemmas(rows, _inventory_core_trans_lemmas())
+    rows = exclude_source_lemmas(rows, _INTRANSITIVE_CONTRAST_BLOCKLIST)
     return _single_token_verb_rows(rows)
+
+
+def pure_strict_intransitive_rows():
+    rows = get_all("strict_intrans", "1", get_all("category", "S\\NP", get_all("verb", "1")))
+    rows = exclude_transitive_source_lemmas(rows)
+    rows = exclude_source_lemmas(rows, _inventory_core_trans_lemmas())
+    return exclude_source_lemmas(rows, _INTRANSITIVE_CONTRAST_BLOCKLIST)
+
+
+def pure_strict_transitive_rows():
+    rows = get_all("strict_trans", "1", get_all("category", "(S\\NP)/NP", get_all("verb", "1")))
+    return exclude_source_lemmas(rows, _inventory_core_intr_lemmas())
+
+
+def pure_transitive_rows():
+    rows = get_all("category", "(S\\NP)/NP", get_all("verb", "1"))
+    return exclude_source_lemmas(rows, _inventory_core_intr_lemmas())
 
 
 def drop_argument_good_verb_rows():

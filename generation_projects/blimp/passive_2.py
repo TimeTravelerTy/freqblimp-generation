@@ -5,6 +5,7 @@ from generation_projects.blimp.overlay_guards import (
     choose_matching_row,
     choose_matched_by_row,
     choose_row_for_active_zipf,
+    filter_plural_looking_singular_nouns,
     nonpassivizable_participle_rows,
     passivizable_participle_rows,
 )
@@ -20,6 +21,7 @@ class Generator(data_generator.BenchmarkGenerator):
                          lexically_identical=False)
         self.intransitive = nonpassivizable_participle_rows()
         self.transitive = passivizable_participle_rows()
+        self.safe_nominals = filter_plural_looking_singular_nouns(all_nominals)
         self.max_sample_attempts = 512
 
     def sample(self):
@@ -40,7 +42,7 @@ class Generator(data_generator.BenchmarkGenerator):
                 NP1 = N_to_DP_mutate(choose_matching_row(
                     V_intrans,
                     "arg_1",
-                    all_nominals,
+                    self.safe_nominals,
                     "noun",
                     fallback_on_empty=False,
                     error_message="No regime-compatible passive patient",

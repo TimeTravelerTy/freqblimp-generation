@@ -3,7 +3,14 @@ from utils.constituent_building import *
 from utils.conjugate import *
 from utils.randomize import choice
 
-from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+from generation_projects.blimp.overlay_guards import (
+    choose_matching_row,
+    choose_matched_by_row,
+    choose_row_for_active_zipf,
+    filter_plural_looking_singular_nouns,
+    pure_strict_intransitive_rows,
+    pure_transitive_rows,
+)
 
 class Generator(data_generator.BenchmarkGenerator):
     def __init__(self):
@@ -15,10 +22,9 @@ class Generator(data_generator.BenchmarkGenerator):
                          two_prefix_method=True,
                          lexically_identical=False)
 
-        self.strict_intransitive = get_all("category", "S\\NP", get_all("strict_intrans", "1"))
-        transitive_exprs = set(map(str, all_transitive_verbs["expression"]))
-        keep_mask = ~np.isin(np.asarray(self.strict_intransitive["expression"], dtype=str), list(transitive_exprs))
-        self.strict_intransitive = self.strict_intransitive[keep_mask]
+        self.strict_intransitive = pure_strict_intransitive_rows()
+        self.transitive_verbs = pure_transitive_rows()
+        self.safe_nominals = filter_plural_looking_singular_nouns(all_nominals)
         self.max_sample_attempts = 512
 
     def sample(self):
@@ -27,34 +33,42 @@ class Generator(data_generator.BenchmarkGenerator):
         # The bear has smiled    the girl.
         # Subj     Aux V_intrans obj
 
-        verb_pool = filter_rows_for_active_zipf(all_transitive_verbs, "verb", fallback_on_empty=False)
-        if len(verb_pool) == 0:
-            raise LexicalGapError("No regime-compatible transitive verbs")
-
         for _ in range(self.max_sample_attempts):
-            V_trans = choice(verb_pool)
-            subj_pool = filter_rows_for_active_zipf(
-                get_matches_of(V_trans, "arg_1", all_nominals), "noun", fallback_on_empty=False
-            )
-            if len(subj_pool) == 0:
+            try:
+                V_trans = choose_row_for_active_zipf(
+                    self.transitive_verbs,
+                    "verb",
+                    fallback_on_empty=False,
+                    error_message="No regime-compatible transitive verbs",
+                )
+                Subj = N_to_DP_mutate(choose_matching_row(
+                    V_trans,
+                    "arg_1",
+                    self.safe_nominals,
+                    "noun",
+                    fallback_on_empty=False,
+                    error_message="No regime-compatible transitive subject",
+                ))
+                Aux = return_aux(V_trans, Subj)
+                Obj = N_to_DP_mutate(choose_matching_row(
+                    V_trans,
+                    "arg_2",
+                    self.safe_nominals,
+                    "noun",
+                    fallback_on_empty=False,
+                    error_message="No regime-compatible transitive object",
+                ))
+                V_intrans = choose_matched_by_row(
+                    Subj,
+                    "arg_1",
+                    get_matches_of(Aux, "arg_2", self.strict_intransitive),
+                    "verb",
+                    fallback_on_empty=False,
+                    error_message="No regime-compatible intransitive contrast verb",
+                )
+                break
+            except LexicalGapError:
                 continue
-            Subj = N_to_DP_mutate(choice(subj_pool))
-            Aux = return_aux(V_trans, Subj)
-            obj_pool = filter_rows_for_active_zipf(
-                get_matches_of(V_trans, "arg_2", all_nominals), "noun", fallback_on_empty=False
-            )
-            if len(obj_pool) == 0:
-                continue
-            Obj = N_to_DP_mutate(choice(obj_pool))
-            bad_pool = filter_rows_for_active_zipf(
-                get_matched_by(Subj, "arg_1", get_matches_of(Aux, "arg_2", self.strict_intransitive)),
-                "verb",
-                fallback_on_empty=False,
-            )
-            if len(bad_pool) == 0:
-                continue
-            V_intrans = choice(bad_pool)
-            break
         else:
             raise LexicalGapError("No regime-compatible transitive pair found after bounded retries")
 

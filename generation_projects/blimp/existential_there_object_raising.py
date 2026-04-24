@@ -8,6 +8,7 @@ from functools import reduce
 from generation_projects.blimp.overlay_guards import (
     choose_row_for_active_zipf,
     control_object_verb_rows,
+    filter_plural_looking_singular_nouns,
     object_raising_verb_rows,
     rows_matching_inflection,
 )
@@ -26,7 +27,7 @@ class Generator(data_generator.BenchmarkGenerator):
         self.good_quantifiers_sg = reduce(np.union1d, [get_all("expression", s, all_determiners) for s in good_quantifiers_sg_str])
         self.good_quantifiers_pl = reduce(np.union1d, [get_all("expression", s, all_determiners) for s in good_quantifiers_pl_str])
         bad_emb_subjs = reduce(np.union1d, (all_relational_poss_nouns, all_proper_names, get_all("category", "NP")))
-        self.safe_emb_subjs = np.setdiff1d(all_nominals, bad_emb_subjs)
+        self.safe_emb_subjs = filter_plural_looking_singular_nouns(np.setdiff1d(all_nominals, bad_emb_subjs))
         self.raising_verbs = object_raising_verb_rows()
         self.control_verbs = control_object_verb_rows()
         self.compatible_pairs = []
@@ -42,7 +43,9 @@ class Generator(data_generator.BenchmarkGenerator):
         cached = self._subject_pool_cache.get(key)
         if cached is not None:
             return cached
-        subj_pool = get_matches_of(V_raise, "arg_1", get_matches_of(V_control, "arg_1"))
+        subj_pool = filter_plural_looking_singular_nouns(
+            get_matches_of(V_raise, "arg_1", get_matches_of(V_control, "arg_1"))
+        )
         self._subject_pool_cache[key] = subj_pool
         return subj_pool
 
