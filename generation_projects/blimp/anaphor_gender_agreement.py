@@ -5,7 +5,7 @@ from utils.randomize import choice
 from functools import reduce
 from utils.vocab_sets import *
 
-from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+from generation_projects.blimp.overlay_guards import choose_row_for_active_zipf, filter_rows_for_active_zipf
 
 REFLEXIVE_PREDICATE_EXPRESSIONS = (
     "abandon", "abandons", "abandoned", "abandoning",
@@ -65,7 +65,12 @@ class AnaphorGenerator(data_generator.BenchmarkGenerator):
         # N1   V1    refl_mismatch
 
         for _ in range(128):
-            V1 = choice(self.reflexive_predicates)
+            V1 = choose_row_for_active_zipf(
+                self.reflexive_predicates,
+                "verb",
+                fallback_on_empty=True,
+                minimum_candidates=8,
+            )
             noun_candidates = get_matches_of(V1, "arg_1", get_matches_of(V1, "arg_2", self.noun_pool))
             if len(noun_candidates) > 0:
                 break
