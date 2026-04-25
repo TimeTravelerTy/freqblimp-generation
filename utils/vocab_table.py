@@ -9,6 +9,8 @@ from collections import defaultdict
 from functools import lru_cache
 
 import numpy as np
+import wn
+from lemminflect import getLemma
 
 from utils.data_type import data_type
 from utils.frequency import row_signature, zipf_for_expression
@@ -42,10 +44,55 @@ _TABLE_INSTANCE_COUNTER = itertools.count()
 _RESULT_CACHE_MAX = 256
 _WARNED_MESSAGES = set()
 _HIGH_CARDINALITY_EXACT_MATCH_LABELS = frozenset({"expression", "root", "singularform", "pluralform"})
-_RUNTIME_COMPACT_CACHE_VERSION = "v2"
+_RUNTIME_COMPACT_CACHE_VERSION = "v3"
+_ALLOWED_OVERLAY_ING_NOUN_EXPRESSIONS = frozenset({
+    "building",
+    "ceiling",
+    "drawing",
+    "king",
+    "morning",
+    "offspring",
+    "painting",
+    "ring",
+    "spring",
+    "thing",
+})
 _EXCLUDED_OVERLAY_NOUN_EXPRESSIONS = frozenset({
+    "airs",
+    "altogether",
     "chang",
+    "colonial",
+    "contemporary",
+    "dependent",
+    "dining",
+    "disabled",
+    "divine",
+    "drinkable",
+    "empty",
+    "familiar",
+    "federal",
+    "favorite",
+    "favourite",
+    "homosexual",
+    "immune",
+    "independent",
+    "invalid",
+    "moderate",
+    "neutral",
+    "poor",
+    "prior",
+    "probable",
+    "posing",
     "qaeda",
+    "regular",
+    "rich",
+    "romantic",
+    "semitic",
+    "silly",
+    "skating",
+    "steady",
+    "temporary",
+    "wounded",
 })
 
 
@@ -62,6 +109,32 @@ def _expression_named_entity_variants(expression):
         if expr.endswith("s") and len(expr) > 3:
             variants.add(expr[:-1])
     return variants
+
+
+@lru_cache(maxsize=4096)
+def _overlay_deverbal_gerund_expression(expression):
+    expression = _normalize_expression_key(expression)
+    if (
+        not expression
+        or " " in expression
+        or not expression.endswith("ing")
+        or expression in _ALLOWED_OVERLAY_ING_NOUN_EXPRESSIONS
+    ):
+        return False
+    try:
+        verb_lemmas = getLemma(expression, upos="VERB") or ()
+    except Exception:
+        return False
+    for lemma in verb_lemmas:
+        lemma = _normalize_expression_key(lemma)
+        if not lemma or lemma == expression or len(lemma) <= 2:
+            continue
+        try:
+            if wn.synsets(lemma, pos="v", lexicon="oewn:2021"):
+                return True
+        except Exception:
+            continue
+    return False
 
 
 @lru_cache(maxsize=1)
@@ -102,6 +175,11 @@ def _overlay_common_noun_noise_mask(noun_values, expressions, proper_values=None
     normalized = np.char.lower(np.char.strip(expressions))
     one_token = np.char.find(normalized, " ") < 0
     short_alpha = one_token & np.char.isalpha(normalized) & (np.char.str_len(normalized) <= 3)
+    gerund_like = np.fromiter(
+        (_overlay_deverbal_gerund_expression(expression) for expression in normalized),
+        dtype=bool,
+        count=len(normalized),
+    )
     explicit_blocklist = np.isin(normalized, list(_EXCLUDED_OVERLAY_NOUN_EXPRESSIONS))
     same_as_named_entity = np.zeros(len(noun_values), dtype=bool)
     noun_indices = np.flatnonzero(is_noun)
@@ -114,7 +192,7 @@ def _overlay_common_noun_noise_mask(noun_values, expressions, proper_values=None
             count=len(noun_indices),
         )
     is_locale_or_proper = (proper_values == "1") | (locale_values == "1")
-    return is_noun & (short_alpha | explicit_blocklist | same_as_named_entity | is_locale_or_proper)
+    return is_noun & (short_alpha | gerund_like | explicit_blocklist | same_as_named_entity | is_locale_or_proper)
 
 
 def _overlay_row_allowed(values, field_positions):
@@ -128,6 +206,8 @@ def _overlay_row_allowed(values, field_positions):
     if values[field_positions.get("locale", -1)] == "1":
         return False
     if expression in _EXCLUDED_OVERLAY_NOUN_EXPRESSIONS:
+        return False
+    if _overlay_deverbal_gerund_expression(expression):
         return False
     if " " not in expression and expression.isalpha() and len(expression) <= 3:
         return False

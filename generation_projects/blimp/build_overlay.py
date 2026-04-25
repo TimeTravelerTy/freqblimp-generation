@@ -54,6 +54,38 @@ NOUN_BUNDLE_FIELDS = {
     "institution": {"institution": "1", "locale": "", "mass": "0", "properNoun": "0"},
     "locale_institution": {"locale": "1", "institution": "1", "mass": "0", "properNoun": "0"},
 }
+NOUN_OUTPUT_SEMANTIC_FIELDS = (
+    "agent",
+    "animal",
+    "animate",
+    "appearance",
+    "artifact",
+    "clothing",
+    "conceptual",
+    "document",
+    "food",
+    "institution",
+    "liquid",
+    "locale",
+    "occupation",
+    "person",
+    "physical",
+    "properNoun",
+    "vehicle",
+)
+NOUN_BUNDLE_OUTPUT_FIELDS = {
+    "person": {"animate": "1", "person": "1", "physical": "1", "agent": "1", "mass": "0", "properNoun": "0"},
+    "artifact": {"animate": "0", "artifact": "1", "physical": "1", "mass": "0", "properNoun": "0"},
+    "vehicle": {"animate": "0", "artifact": "1", "vehicle": "1", "physical": "1", "mass": "0", "properNoun": "0"},
+    "document": {"animate": "0", "document": "1", "physical": "1", "mass": "0", "properNoun": "0"},
+    "conceptual": {"animate": "0", "conceptual": "1", "mass": "0", "properNoun": "0"},
+    "food_count": {"animate": "0", "food": "1", "physical": "1", "mass": "0", "properNoun": "0"},
+    "liquid_mass": {"animate": "0", "liquid": "1", "physical": "1", "mass": "1", "properNoun": "0"},
+    "animal": {"animal": "1", "animate": "1", "physical": "1", "agent": "1", "mass": "0", "properNoun": "0"},
+    "locale": {"locale": "1", "institution": "", "mass": "0", "properNoun": "0"},
+    "institution": {"institution": "1", "animate": "0", "mass": "0", "properNoun": "0"},
+    "locale_institution": {"locale": "1", "institution": "1", "animate": "0", "mass": "0", "properNoun": "0"},
+}
 VERB_SIG_FIELDS = (
     "category",
     "category_2",
@@ -99,6 +131,84 @@ VERB_FRAME_OVERRIDES = {
     "guzzle": {"remove": set(), "add": {"intr"}},
     "redecorate": {"remove": set(), "add": {"intr"}},
 }
+HEAD_AMBIGUOUS_INTRANSITIVE_CLASSES = {
+    # High-frequency denominal/deadjectival uses whose WordNet verb sense is
+    # real but too fringe for simple BLiMP intransitive templates.
+    "antique": "denominal_object",
+    "bucket": "denominal_object",
+    "charcoal": "deadjectival",
+    "hay": "denominal_object",
+    "holiday": "denominal_time",
+    "honeymoon": "denominal_time",
+    "low": "deadjectival",
+    "nut": "denominal_object",
+    "pearl": "denominal_object",
+    "summer": "denominal_time",
+    "twitter": "entity_like",
+    "vacation": "denominal_time",
+    "war": "denominal_event",
+    "weekend": "denominal_time",
+    "winter": "denominal_time",
+}
+LOW_QUALITY_NOUN_EXPRESSIONS = frozenset({
+    # Nominalized adjectives that are technically noun lemmas but unstable as
+    # arbitrary count nouns in BLiMP minimal-pair templates.
+    "airs",
+    "altogether",
+    "colonial",
+    "contemporary",
+    "dependent",
+    "dining",
+    "disabled",
+    "divine",
+    "drinkable",
+    "empty",
+    "familiar",
+    "federal",
+    "favorite",
+    "favourite",
+    "homosexual",
+    "immune",
+    "independent",
+    "invalid",
+    "moderate",
+    "neutral",
+    "poor",
+    "prior",
+    "probable",
+    "posing",
+    "regular",
+    "rich",
+    "romantic",
+    "semitic",
+    "silly",
+    "skating",
+    "steady",
+    "temporary",
+    "wounded",
+})
+ALLOWED_ING_NOUN_EXPRESSIONS = frozenset({
+    "building",
+    "drawing",
+    "offspring",
+    "painting",
+})
+AGENTIVE_VERB_SUBJECT_DOMAINS = frozenset({
+    "verb.body",
+    "verb.cognition",
+    "verb.communication",
+    "verb.competition",
+    "verb.consumption",
+    "verb.emotion",
+    "verb.possession",
+    "verb.social",
+})
+AGENTIVE_ARG_MARKERS = (
+    "animal=1",
+    "animate=1",
+    "institution=1",
+    "person=1",
+)
 ADJECTIVE_RELATIONAL_PREFIXES = (
     "of or relating to ",
     "relating to ",
@@ -573,6 +683,104 @@ def _definition_has_name_like_markers(definition):
     return bool(CAPITALIZED_TOKEN_RE.search(definition))
 
 
+def _synsets_for(lemma, pos, lexicon):
+    try:
+        return wn.synsets(lemma, pos=pos, lexicon=lexicon)
+    except Exception:
+        return []
+
+
+def _definitions_for(synsets):
+    return [(synset.definition() or "").strip() for synset in synsets if synset.definition()]
+
+
+def _verb_subject_domains(lemma, lexicon):
+    domains = set()
+    for synset in _synsets_for(lemma, "v", lexicon):
+        metadata = synset.metadata() if callable(getattr(synset, "metadata", None)) else {}
+        subject = metadata.get("subject") if isinstance(metadata, dict) else None
+        if subject:
+            domains.add(subject)
+    return frozenset(domains)
+
+
+def _verb_requires_agentive_subject(lemma, lexicon):
+    domains = _verb_subject_domains(lemma, lexicon)
+    return bool(domains) and domains.issubset(AGENTIVE_VERB_SUBJECT_DOMAINS)
+
+
+def _row_allows_agentive_subject(row):
+    requirement = str(row.get("arg_1", ""))
+    return any(marker in requirement for marker in AGENTIVE_ARG_MARKERS)
+
+
+def _filter_verb_rows_for_subject_quality(rows, lemma, lexicon):
+    if not _verb_requires_agentive_subject(lemma, lexicon):
+        return rows
+    return [row for row in rows if _row_allows_agentive_subject(row)]
+
+
+def _head_ambiguous_intransitive_rejection(lemma, entry, zipf_value, lexicon):
+    frame_types = entry.get("frame_types", set())
+    if zipf_value < 3.5 or "intr" not in frame_types:
+        return None, {}
+
+    verb_synsets = _synsets_for(lemma, "v", lexicon)
+    noun_synsets = _synsets_for(lemma, "n", lexicon)
+    adjective_synsets = _synsets_for(lemma, "a", lexicon) + _synsets_for(lemma, "s", lexicon)
+    verb_definitions = _definitions_for(verb_synsets)
+
+    explicit_class = HEAD_AMBIGUOUS_INTRANSITIVE_CLASSES.get(lemma)
+    if explicit_class:
+        return "head_ambiguous_intransitive", {
+            "noise_class": explicit_class,
+            "verb_senses": len(verb_synsets),
+            "noun_senses": len(noun_synsets),
+            "adjective_senses": len(adjective_synsets),
+            "definitions": verb_definitions[:3],
+        }
+
+    if "trans" in frame_types:
+        return None, {}
+
+    if len(noun_synsets) + len(adjective_synsets) < len(verb_synsets):
+        return None, {}
+
+    lowered = [" %s " % re.sub(r"[^a-z]+", " ", definition.lower()).strip() for definition in verb_definitions]
+    if any(" spend the " in definition or " spend or take " in definition for definition in lowered):
+        noise_class = "denominal_time"
+    elif any(" gather " in definition or " harvest " in definition for definition in lowered):
+        noise_class = "denominal_object"
+    elif any(" put " in definition and " into " in definition for definition in lowered):
+        noise_class = "denominal_container"
+    elif any(" travel by " in definition or " ride in " in definition for definition in lowered):
+        noise_class = "denominal_vehicle"
+    elif adjective_synsets and len(verb_synsets) <= 1:
+        noise_class = "deadjectival"
+    elif verb_definitions and all(_definition_has_name_like_markers(definition) for definition in verb_definitions):
+        noise_class = "entity_like"
+    else:
+        return None, {}
+
+    return "head_ambiguous_intransitive", {
+        "noise_class": noise_class,
+        "verb_senses": len(verb_synsets),
+        "noun_senses": len(noun_synsets),
+        "adjective_senses": len(adjective_synsets),
+        "definitions": verb_definitions[:3],
+    }
+
+
+def _low_quality_noun_rejection(lemma):
+    if lemma in LOW_QUALITY_NOUN_EXPRESSIONS:
+        return "low_quality_nominalized_adjective"
+    if lemma.endswith("ing") and lemma not in ALLOWED_ING_NOUN_EXPRESSIONS:
+        verb_lemmas = {str(value).strip().lower() for value in (getLemma(lemma, upos="VERB") or ())}
+        if any(value and value != lemma for value in verb_lemmas):
+            return "deverbal_gerund_noun"
+    return None
+
+
 def _noun_person_name_like(lemma, lexicon):
     try:
         synsets = wn.synsets(lemma, pos="n", lexicon=lexicon)
@@ -670,19 +878,30 @@ def _normalize_noun_row(row, expression, singularform="", pluralform=""):
     return row
 
 
+def _apply_noun_bundle_output_fields(row, bundle):
+    for field in NOUN_OUTPUT_SEMANTIC_FIELDS:
+        if field in row:
+            row[field] = ""
+    for field, value in NOUN_BUNDLE_OUTPUT_FIELDS.get(bundle, {}).items():
+        row[field] = value
+    return row
+
+
 def _normalize_adjective_row(row, expression):
     row["expression"] = expression
     row["frequent"] = "1"
     return row
 
 
-def _make_noun_rows(lemma, template_row):
+def _make_noun_rows(lemma, template_row, bundle):
     plural = _pluralize_noun(lemma)
     if template_row is None:
         return []
     if template_row.get("mass") == "1":
         singular_row = dict(template_row)
-        return [_normalize_noun_row(singular_row, lemma)]
+        _normalize_noun_row(singular_row, lemma)
+        _apply_noun_bundle_output_fields(singular_row, bundle)
+        return [singular_row]
     if not plural or plural == lemma:
         return []
     singular_row = dict(template_row)
@@ -698,6 +917,8 @@ def _make_noun_rows(lemma, template_row):
     plural_row = dict(plural_candidates[0])
     _normalize_noun_row(singular_row, lemma, pluralform=plural)
     _normalize_noun_row(plural_row, plural, singularform=lemma)
+    _apply_noun_bundle_output_fields(singular_row, bundle)
+    _apply_noun_bundle_output_fields(plural_row, bundle)
     return [singular_row, plural_row]
 
 
@@ -1050,6 +1271,10 @@ def build_overlay(args):
             if args.noun_zipf_max is not None and zipf_value > args.noun_zipf_max:
                 _record_rejection(audit, "noun", lemma, "above_zipf_max", zipf=zipf_value)
                 continue
+            quality_reason = _low_quality_noun_rejection(lemma)
+            if quality_reason:
+                _record_rejection(audit, "noun", lemma, quality_reason, zipf=zipf_value)
+                continue
             bundle, bundle_confidence, subjects = _noun_bundle_for_lemma(lemma, args.lexicon)
             if bundle is None:
                 _record_rejection(audit, "noun", lemma, "untyped_bundle", zipf=zipf_value, subjects=subjects)
@@ -1096,7 +1321,7 @@ def build_overlay(args):
             if template_row is None:
                 _record_rejection(audit, "noun", lemma, "missing_singular_template", zipf=zipf_value, bundle=bundle)
                 continue
-            new_rows = _make_noun_rows(lemma, template_row)
+            new_rows = _make_noun_rows(lemma, template_row, bundle)
             if not new_rows:
                 _record_rejection(audit, "noun", lemma, "inflection_failed", zipf=zipf_value, bundle=bundle)
                 continue
@@ -1159,6 +1384,15 @@ def build_overlay(args):
             if args.verb_zipf_max is not None and zipf_value > args.verb_zipf_max:
                 _record_rejection(audit, "verb", lemma, "above_zipf_max", zipf=zipf_value)
                 continue
+            quality_reason, quality_details = _head_ambiguous_intransitive_rejection(
+                lemma,
+                entry,
+                zipf_value,
+                args.lexicon,
+            )
+            if quality_reason:
+                _record_rejection(audit, "verb", lemma, quality_reason, zipf=zipf_value, **quality_details)
+                continue
             special_keys = _special_verb_candidate_keys(entry)
             core_template_bundles = []
             core_template_keys = _core_template_keys(entry["frame_types"])
@@ -1213,6 +1447,7 @@ def build_overlay(args):
                     template_label = sig_family[0]["root"]
                     new_rows = _make_verb_rows(lemma, sig_family, template_label, suffix_token=suffix_token)
                     new_rows = _apply_argument_structure_overrides(new_rows, entry)
+                    new_rows = _filter_verb_rows_for_subject_quality(new_rows, lemma, args.lexicon)
                     if not new_rows:
                         saw_inflection_failure = True
                         continue
@@ -1250,6 +1485,7 @@ def build_overlay(args):
                     template_label = special_family[0]["root"] or special_key
                     new_rows = _make_verb_rows(lemma, special_family, template_label, suffix_token=special_suffix)
                     new_rows = _apply_argument_structure_overrides(new_rows, entry)
+                    new_rows = _filter_verb_rows_for_subject_quality(new_rows, lemma, args.lexicon)
                     if not new_rows:
                         saw_inflection_failure = True
                         continue

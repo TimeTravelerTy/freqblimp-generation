@@ -61,8 +61,25 @@ def _content_sample_space(frequent, controlled_pos):
         return vocab
     return get_all("frequent", "1")
 
+
+def _content_pool(pool, controlled_pos, minimum_candidates=10):
+    policy = get_active_policy()
+    if policy is None:
+        return pool
+    if controlled_pos == "verb" and getattr(policy, "overlay_enabled", False):
+        from generation_projects.blimp.overlay_guards import (
+            exclude_agentive_subject_mismatch_rows,
+            exclude_low_quality_overlay_verb_lemmas,
+        )
+        pool = exclude_agentive_subject_mismatch_rows(exclude_low_quality_overlay_verb_lemmas(pool))
+    if controlled_pos not in set(policy.controlled_pos):
+        return pool
+    from generation_projects.blimp.overlay_guards import strict_zipf_rows
+    return strict_zipf_rows(pool, controlled_pos, minimum_candidates=minimum_candidates)
+
+
 def verb_phrase_from_subj(subject, frequent=True, allow_negated=True):
-    verb = choice(get_matched_by(subject, "arg_1", all_verbs))
+    verb = choice(_content_pool(get_matched_by(subject, "arg_1", all_verbs), "verb"))
     args = verb_args_from_verb(verb=verb, frequent=frequent, subj=subject, allow_negated=allow_negated)
     VP = V_to_VP_mutate(verb, frequent=frequent, args=args)
     return VP
@@ -84,7 +101,10 @@ def verb_args_from_verb(verb, frequent=True, subj=None, aux=None, allow_negated=
 
     # all verbs have a subject
     if subj is None:
-        subj = N_to_DP_mutate(choice(get_matches_of(verb, "arg_1", get_all("category", "N", noun_vocab))), allow_quantifiers=allow_quantifiers)
+        subj = N_to_DP_mutate(
+            choice(_content_pool(get_matches_of(verb, "arg_1", get_all("category", "N", noun_vocab)), "noun")),
+            allow_quantifiers=allow_quantifiers,
+        )
     args["subj"] = subj
 
     # all verbs have an auxiliary (or null)
@@ -99,26 +119,31 @@ def verb_args_from_verb(verb, frequent=True, subj=None, aux=None, allow_negated=
 
     # TRANSITIVE
     if verb["category"] == "(S\\NP)/NP":
-        args["args"] = [N_to_DP_mutate(choice(get_matches_of(verb, "arg_2", get_all("category", "N", noun_vocab))), allow_quantifiers=allow_quantifiers)]
+        args["args"] = [
+            N_to_DP_mutate(
+                choice(_content_pool(get_matches_of(verb, "arg_2", get_all("category", "N", noun_vocab)), "noun")),
+                allow_quantifiers=allow_quantifiers,
+            )
+        ]
 
     # FROM-ING EMBEDDING
     if verb["category"] == "(S\\NP)/(S[from]\\NP)":
-        obj = N_to_DP_mutate(choice(get_matches_of(verb, "arg_2", noun_vocab)), allow_quantifiers=allow_quantifiers)
+        obj = N_to_DP_mutate(choice(_content_pool(get_matches_of(verb, "arg_2", noun_vocab), "noun")), allow_quantifiers=allow_quantifiers)
         if allow_recursion:
-            VP = V_to_VP_mutate(choice(get_matched_by(obj, "arg_1", all_ing_verbs)), frequent=frequent, aux=False)
+            VP = V_to_VP_mutate(choice(_content_pool(get_matched_by(obj, "arg_1", all_ing_verbs), "verb")), frequent=frequent, aux=False)
         else:
             safe_verbs = table_intersect1d(all_ing_verbs, all_non_recursive_verbs)
-            VP = V_to_VP_mutate(choice(get_matched_by(obj, "arg_1", safe_verbs)), frequent=frequent, aux=False)
+            VP = V_to_VP_mutate(choice(_content_pool(get_matched_by(obj, "arg_1", safe_verbs), "verb")), frequent=frequent, aux=False)
         VP[0] = "from " + VP[0]
         args["args"] = [obj, VP]
 
     # RAISING TO OBJECT
     if verb["category_2"] == "V_raising_object":
         if allow_recursion:
-            v_emb = choice(all_bare_verbs)
+            v_emb = choice(_content_pool(all_bare_verbs, "verb"))
         else:
             safe_verbs = table_intersect1d(all_bare_verbs, all_non_recursive_verbs)
-            v_emb = choice(safe_verbs)
+            v_emb = choice(_content_pool(safe_verbs, "verb"))
         args_emb = verb_args_from_verb(v_emb, frequent)
         VP = V_to_VP_mutate(v_emb, frequent=frequent, args=args_emb, aux=False)
         VP[0] = "to " + VP[0]
@@ -126,12 +151,12 @@ def verb_args_from_verb(verb, frequent=True, subj=None, aux=None, allow_negated=
 
     # OBJECT CONTROL
     if verb["category_2"] == "V_control_object":
-        obj = N_to_DP_mutate(choice(get_matches_of(verb, "arg_2")), allow_quantifiers=allow_quantifiers)
+        obj = N_to_DP_mutate(choice(_content_pool(get_matches_of(verb, "arg_2"), "noun")), allow_quantifiers=allow_quantifiers)
         if allow_recursion:
-            v_emb = choice(get_matched_by(obj, "arg_1", all_bare_verbs))
+            v_emb = choice(_content_pool(get_matched_by(obj, "arg_1", all_bare_verbs), "verb"))
         else:
             safe_verbs = table_intersect1d(all_bare_verbs, all_non_recursive_verbs)
-            v_emb = choice(get_matched_by(obj, "arg_1", safe_verbs))
+            v_emb = choice(_content_pool(get_matched_by(obj, "arg_1", safe_verbs), "verb"))
         VP = V_to_VP_mutate(v_emb, frequent=frequent, aux=False)
         VP[0] = "to " + VP[0]
         args["args"] = [obj, VP]
@@ -153,10 +178,10 @@ def verb_args_from_verb(verb, frequent=True, subj=None, aux=None, allow_negated=
     # SUBJECT CONTROL
     if verb["category"] == "(S\\NP)/(S[to]\\NP)":
         if allow_recursion:
-            v_emb = choice(get_matched_by(subj, "arg_1", all_bare_verbs))
+            v_emb = choice(_content_pool(get_matched_by(subj, "arg_1", all_bare_verbs), "verb"))
         else:
             safe_verbs = table_intersect1d(all_bare_verbs, all_non_recursive_verbs)
-            v_emb = choice(get_matched_by(subj, "arg_1", safe_verbs))
+            v_emb = choice(_content_pool(get_matched_by(subj, "arg_1", safe_verbs), "verb"))
         VP = V_to_VP_mutate(v_emb, frequent=frequent, aux=False)
         VP[0] = "to " + VP[0]
         args["args"] = [VP]
@@ -164,10 +189,10 @@ def verb_args_from_verb(verb, frequent=True, subj=None, aux=None, allow_negated=
     # RAISING TO SUBJECT
     if verb["category_2"] == "V_raising_subj":
         if allow_recursion:
-            v_emb = choice(all_bare_verbs)
+            v_emb = choice(_content_pool(all_bare_verbs, "verb"))
         else:
             safe_verbs = table_intersect1d(all_bare_verbs, all_non_recursive_verbs)
-            v_emb = choice(get_matched_by(subj, "arg_1", safe_verbs))
+            v_emb = choice(_content_pool(get_matched_by(subj, "arg_1", safe_verbs), "verb"))
         args_emb = verb_args_from_verb(v_emb, frequent, subj=False)
         VP = V_to_VP_mutate(v_emb, frequent=frequent, args=args_emb, aux=False)
         VP[0] = "to " + VP[0]
@@ -263,7 +288,7 @@ def make_sentence(frequent=True, allow_recursion=False):
     :param frequent: should only frequent vocab be generated?
     :return: a vocab entry with the expression containing the string of the full sentence
     """
-    verb = widen_expression_field(choice(all_verbs))
+    verb = widen_expression_field(choice(_content_pool(all_verbs, "verb")))
     verb[0] = make_sentence_from_verb(verb, frequent=frequent, allow_recursion=allow_recursion)
     return verb
 
@@ -284,7 +309,7 @@ def make_emb_subj_question(frequent=True):
     :param frequent: should only frequent vocab be generated?
     :return: a vocab entry with the expression corresponding to the string of an entire embedded question with a wh-subject
     """
-    verb = widen_expression_field(choice(all_possibly_singular_verbs))
+    verb = widen_expression_field(choice(_content_pool(all_possibly_singular_verbs, "verb")))
     args = verb_args_from_verb(verb)
     wh = choice(get_matched_by(args["subj"], "arg_1", all_wh_words))
     args["subj"] = wh

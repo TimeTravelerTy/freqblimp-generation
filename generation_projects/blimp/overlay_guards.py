@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Iterable, Optional, Sequence
 
 import numpy as np
+import wn
 
 from utils.vocab_sets import all_nominals
 from utils.exceptions import LexicalGapError
@@ -54,6 +55,46 @@ _PASSIVE_GOOD_VERB_BLOCKLIST = (
 _INTRANSITIVE_CONTRAST_BLOCKLIST = _PASSIVE_BAD_VERB_BLOCKLIST + (
     # Direct-object uses are common enough to blur transitive/passive contrasts.
     "side",
+    # These strongly prefer PP complements in this template; bare clauses like
+    # "the poet resulted" or "the guests resort" are not good simple
+    # intransitivity minimal pairs.
+    "resort", "result",
+)
+
+_LOW_QUALITY_OVERLAY_VERB_LEMMAS = (
+    # Mostly noun/adjective-derived or name-like verb uses whose wordfreq score
+    # is driven by non-verbal senses. They are valid dictionary verbs, but they
+    # make simple BLiMP argument-structure templates read as lexical oddities.
+    "antique", "bucket", "charcoal", "harry", "hay", "holiday",
+    "honeymoon", "hull", "low", "nut", "pearl", "season", "summer",
+    "taxi", "tool", "twitter", "vacation", "war", "weekend", "winter",
+)
+
+_LOW_QUALITY_NOMINAL_EXPRESSIONS = (
+    # Nominalized adjectives that surface poorly with arbitrary determiners.
+    "airs", "altogether", "colonial", "contemporary", "dependent",
+    "dining", "disabled", "divine", "drinkable", "empty", "federal",
+    "homosexual", "immune", "independent", "invalid", "moderate", "poor",
+    "prior", "probable", "posing", "rich", "romantic", "semitic", "silly", "skating",
+    "temporary",
+)
+
+_AGENTIVE_VERB_SUBJECT_DOMAINS = frozenset({
+    "verb.body",
+    "verb.cognition",
+    "verb.communication",
+    "verb.competition",
+    "verb.consumption",
+    "verb.emotion",
+    "verb.possession",
+    "verb.social",
+})
+
+_AGENTIVE_ARG_MARKERS = (
+    "animal=1",
+    "animate=1",
+    "institution=1",
+    "person=1",
 )
 
 _CONTROL_SUBJECT_VERBS = (
@@ -309,8 +350,10 @@ def _clear_zipf_filter_cache():
     _ZIPF_FILTER_CACHE.clear()
     _transitive_source_lemmas.cache_clear()
     _inventory_core_frame_lemmas.cache_clear()
+    _inventory_any_intransitive_lemmas.cache_clear()
     _inventory_core_intr_lemmas.cache_clear()
     _inventory_core_trans_lemmas.cache_clear()
+    _verb_subject_domains.cache_clear()
 
 
 register_query_cache_clear_hook(_clear_zipf_filter_cache)
@@ -384,6 +427,66 @@ def _inventory_core_trans_lemmas():
     return _inventory_core_frame_lemmas()[1]
 
 
+@lru_cache(maxsize=None)
+def _verb_subject_domains(lemma):
+    try:
+        synsets = wn.synsets(lemma, pos="v", lexicon="oewn:2021")
+    except Exception:
+        return frozenset()
+    domains = set()
+    for synset in synsets:
+        metadata = synset.metadata() if callable(getattr(synset, "metadata", None)) else {}
+        subject = metadata.get("subject") if isinstance(metadata, dict) else None
+        if subject:
+            domains.add(subject)
+    return frozenset(domains)
+
+
+def _verb_requires_agentive_subject(lemma):
+    domains = _verb_subject_domains(lemma)
+    return bool(domains) and domains.issubset(_AGENTIVE_VERB_SUBJECT_DOMAINS)
+
+
+def _row_allows_agentive_subject(row):
+    requirement = str(row["arg_1"]) if "arg_1" in row.dtype.names else ""
+    return any(marker in requirement for marker in _AGENTIVE_ARG_MARKERS)
+
+
+def exclude_agentive_subject_mismatch_rows(table):
+    if len(table) == 0:
+        return table
+    keep = np.fromiter(
+        (
+            not _verb_requires_agentive_subject(_source_lemma_for_row(row).lower())
+            or _row_allows_agentive_subject(row)
+            for row in table
+        ),
+        dtype=bool,
+        count=len(table),
+    )
+    return table[keep]
+
+
+@lru_cache(maxsize=1)
+def _inventory_any_intransitive_lemmas():
+    if not _VERB_INVENTORY_PATH.exists():
+        return frozenset()
+    with _VERB_INVENTORY_PATH.open() as handle:
+        payload = json.load(handle)
+    entries = payload.get("entries", payload) if isinstance(payload, dict) else payload
+    lemmas = set()
+    for entry in entries:
+        lemma = str(entry.get("lemma", "")).strip().lower()
+        if not lemma:
+            continue
+        for frame in entry.get("frames", ()):
+            kind = frame.get("type") or frame.get("kind")
+            if isinstance(kind, str) and (kind == "intr" or kind.startswith("intr_")):
+                lemmas.add(lemma)
+                break
+    return frozenset(lemmas)
+
+
 def exclude_source_lemmas(table, lemmas):
     if len(table) == 0:
         return table
@@ -396,6 +499,30 @@ def exclude_source_lemmas(table, lemmas):
         count=len(table),
     )
     return table[keep]
+
+
+def exclude_low_quality_overlay_verb_lemmas(table):
+    return exclude_source_lemmas(table, _LOW_QUALITY_OVERLAY_VERB_LEMMAS)
+
+
+def safe_transitive_verb_rows():
+    rows = get_all("category", "(S\\NP)/NP", get_all("verb", "1"))
+    return exclude_low_quality_overlay_verb_lemmas(rows)
+
+
+def safe_intransitive_verb_rows():
+    rows = get_all("category", "S\\NP", get_all("verb", "1"))
+    rows = exclude_agentive_subject_mismatch_rows(rows)
+    return exclude_low_quality_overlay_verb_lemmas(rows)
+
+
+def strict_zipf_rows(table, controlled_pos: str, minimum_candidates: Optional[int]=None):
+    return filter_rows_for_active_zipf(
+        table,
+        controlled_pos,
+        fallback_on_empty=False,
+        minimum_candidates=minimum_candidates,
+    )
 
 
 def _zipf_distance_from_window(zipf_values, lower, upper):
@@ -733,7 +860,7 @@ def existential_bad_control_subject_verb_rows():
 @lru_cache(maxsize=1)
 def dp_buildable_nominal_rows():
     """Nominals that N_to_DP_mutate can safely realize as DPs."""
-    return table_union1d(
+    rows = table_union1d(
         table_union1d(
             get_all("category", "N", all_nominals),
             get_all("category", "N/NP", all_nominals),
@@ -743,6 +870,16 @@ def dp_buildable_nominal_rows():
             get_all("category", "N/S", all_nominals),
         ),
     )
+    return exclude_source_lemmas(rows, _LOW_QUALITY_NOMINAL_EXPRESSIONS)
+
+
+@lru_cache(maxsize=1)
+def simple_common_noun_rows():
+    """Plain common N rows for templates that insert raw noun text directly."""
+    rows = get_all("category", "N", all_nominals)
+    rows = get_all("properNoun", "0", rows)
+    rows = table_setdiff1d(rows, get_all("locale", "1", rows))
+    return exclude_source_lemmas(rows, _LOW_QUALITY_NOMINAL_EXPRESSIONS)
 
 
 def _single_token_verb_rows(table):
@@ -757,6 +894,7 @@ def passivizable_participle_rows():
     rows = get_all("passive", "1", get_all("category", "(S\\NP)/NP", get_all("en", "1", get_all("verb", "1"))))
     rows = exclude_source_lemmas(rows, _inventory_core_intr_lemmas())
     rows = exclude_source_lemmas(rows, _PASSIVE_GOOD_VERB_BLOCKLIST)
+    rows = exclude_low_quality_overlay_verb_lemmas(rows)
     return _single_token_verb_rows(rows)
 
 
@@ -769,6 +907,8 @@ def nonpassivizable_participle_rows():
     rows = exclude_transitive_source_lemmas(rows)
     rows = exclude_source_lemmas(rows, _inventory_core_trans_lemmas())
     rows = exclude_source_lemmas(rows, _INTRANSITIVE_CONTRAST_BLOCKLIST)
+    rows = exclude_agentive_subject_mismatch_rows(rows)
+    rows = exclude_low_quality_overlay_verb_lemmas(rows)
     return _single_token_verb_rows(rows)
 
 
@@ -776,17 +916,22 @@ def pure_strict_intransitive_rows():
     rows = get_all("strict_intrans", "1", get_all("category", "S\\NP", get_all("verb", "1")))
     rows = exclude_transitive_source_lemmas(rows)
     rows = exclude_source_lemmas(rows, _inventory_core_trans_lemmas())
-    return exclude_source_lemmas(rows, _INTRANSITIVE_CONTRAST_BLOCKLIST)
+    rows = exclude_source_lemmas(rows, _INTRANSITIVE_CONTRAST_BLOCKLIST)
+    rows = exclude_agentive_subject_mismatch_rows(rows)
+    return exclude_low_quality_overlay_verb_lemmas(rows)
 
 
 def pure_strict_transitive_rows():
     rows = get_all("strict_trans", "1", get_all("category", "(S\\NP)/NP", get_all("verb", "1")))
-    return exclude_source_lemmas(rows, _inventory_core_intr_lemmas())
+    rows = exclude_source_lemmas(rows, _inventory_core_intr_lemmas())
+    rows = exclude_source_lemmas(rows, _inventory_any_intransitive_lemmas())
+    return exclude_low_quality_overlay_verb_lemmas(rows)
 
 
 def pure_transitive_rows():
     rows = get_all("category", "(S\\NP)/NP", get_all("verb", "1"))
-    return exclude_source_lemmas(rows, _inventory_core_intr_lemmas())
+    rows = exclude_source_lemmas(rows, _inventory_core_intr_lemmas())
+    return exclude_low_quality_overlay_verb_lemmas(rows)
 
 
 def drop_argument_good_verb_rows():
@@ -868,7 +1013,9 @@ def causative_bad_intransitive_rows():
     )
     keep_mask = ~np.isin(np.asarray(combined["root"], dtype=str), list(alternating_roots))
     keep_mask &= ~np.isin(np.asarray(combined["expression"], dtype=str), list(transitive_exprs))
-    return combined[keep_mask]
+    rows = exclude_source_lemmas(combined[keep_mask], _INTRANSITIVE_CONTRAST_BLOCKLIST)
+    rows = exclude_agentive_subject_mismatch_rows(rows)
+    return exclude_low_quality_overlay_verb_lemmas(rows)
 
 
 def requirement_from_text(*parts: Iterable[object]) -> Optional[str]:

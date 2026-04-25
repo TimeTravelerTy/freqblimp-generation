@@ -5,7 +5,12 @@ from utils.randomize import choice, decision
 from utils.vocab_sets import *
 from utils.vocab_table import get_row_metadata, _get_label_index
 
-from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+from generation_projects.blimp.overlay_guards import (
+    filter_rows_for_active_zipf,
+    safe_transitive_verb_rows,
+    simple_common_noun_rows,
+    strict_zipf_rows,
+)
 
 class AgreementGenerator(data_generator.BenchmarkGenerator):
     def __init__(self):
@@ -16,7 +21,7 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
                          one_prefix_method=False,
                          two_prefix_method=False,
                          lexically_identical=False)
-        self.safe_verbs = all_transitive_verbs
+        self.safe_verbs = safe_transitive_verb_rows()
         self.plural_dets = [("two", "three"),
                             ("three", "two"),
                             ("four", "five"),
@@ -25,7 +30,7 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
                             ("a few", "several"),
                             ("many", "few"),
                             ("few", "many"),
-                            ("a few", "a lot of"),
+                            ("a few", "a lot"),
                             ("a lot of", "a few"),
                             ("no", "some"),
                             ("three", "more"),
@@ -55,9 +60,9 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
         #                         ("one", "at least as many")
         #                     ]
 
-        self.safe_objs_pl = np.setdiff1d(all_nominals, all_proper_names)
-        self.safe_objs_sg = np.setdiff1d(all_nominals, all_proper_names)
-        self.safe_objs = np.setdiff1d(all_nominals, all_proper_names)
+        self.safe_objs_pl = simple_common_noun_rows()
+        self.safe_objs_sg = simple_common_noun_rows()
+        self.safe_objs = simple_common_noun_rows()
 
     def _adjective_pool_for_obj(self, obj):
         return filter_rows_for_active_zipf(get_matched_by(obj, "arg_1", all_adjectives), "adjective")
@@ -90,6 +95,7 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
             pool = filter_rows_for_active_zipf(
                 pool,
                 controlled_pos,
+                fallback_on_empty=False,
                 minimum_candidates=minimum_candidates,
             )
         # Cap to avoid O(N_overlay) row_signature calls over huge pools.
@@ -114,7 +120,7 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
         # John  has  had two red  cups and Jane  has  had three green.
         # Subj1 Aux1 V   D1  Adj1 Obj  AND Subj2 Aux2 V   D2    Adj2
 
-        V = choice(self.safe_verbs)
+        V = choice(strict_zipf_rows(self.safe_verbs, "verb", minimum_candidates=10))
         subj_pool = self._source_balanced_pool(
             get_matches_of(V, "arg_1", all_nominals),
             controlled_pos="noun",

@@ -3,8 +3,9 @@
 .claude/
 CODEX_README.md
 logs/
-outputs/overlay_qc*
-outputs/full_3regimes_f027269_20260421
+outputs/overlay*
+outputs/eval_*
+outputs/full_3regimes*
 outputs/inductive_biases
 outputs/tsubame_runs
 outputs/fix_smoke*/
