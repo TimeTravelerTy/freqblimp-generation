@@ -223,6 +223,12 @@ class Generator:
                         "Paradigm %s exceeded timeout of %ss after %d accepted pairs"
                         % (constant_data["UID"], paradigm_timeout, pairID)
                     )
+            if paradigm_timeout is not None and (time.time() - started_ts) > paradigm_timeout:
+                progress.close()
+                raise TimeoutError(
+                    "Paradigm %s exceeded timeout of %ss after %d accepted pairs"
+                    % (constant_data["UID"], paradigm_timeout, pairID)
+                )
         progress.close()
         output_writer.close()
         finished_at = datetime.datetime.now()
