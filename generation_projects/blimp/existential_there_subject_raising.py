@@ -11,11 +11,14 @@ from generation_projects.blimp.overlay_guards import (
     control_subject_adjective_rows,
     curated_template_expressions,
     existential_bad_control_subject_verb_rows,
+    existential_subject_raising_adjective_rows,
+    existential_subject_raising_verb_rows,
     filter_plural_looking_singular_nouns,
     filter_rows_for_active_zipf,
     overlay_enabled,
     rows_matching_inflection,
     rows_matching_expressions,
+    simple_common_noun_rows,
     subject_raising_verb_rows,
     subject_raising_adjective_rows,
 )
@@ -34,17 +37,20 @@ class Generator(data_generator.BenchmarkGenerator):
         self.good_quantifiers_sg = reduce(np.union1d, [get_all("expression", s, all_determiners) for s in good_quantifiers_sg_str])
         self.good_quantifiers_pl = reduce(np.union1d, [get_all("expression", s, all_determiners) for s in good_quantifiers_pl_str])
         bad_emb_subjs = reduce(np.union1d, (all_relational_poss_nouns, all_proper_names, get_all("category", "NP")))
-        self.safe_emb_subjs = filter_plural_looking_singular_nouns(np.setdiff1d(all_nominals, bad_emb_subjs))
-        self.raising_verbs = subject_raising_verb_rows()
+        self.safe_emb_subjs = filter_plural_looking_singular_nouns(
+            np.setdiff1d(simple_common_noun_rows(), bad_emb_subjs)
+        )
+        self.raising_verbs = existential_subject_raising_verb_rows()
         curated_control_verbs = existential_bad_control_subject_verb_rows()
         if len(curated_control_verbs) > 0:
             self.control_verbs = curated_control_verbs
         else:
             self.control_verbs = np.setdiff1d(control_subject_verb_rows(), get_all("root", "fail_(S\\NP)/(S[to]\\N)"))
-        self.raising_pred_rows = subject_raising_adjective_rows()
+        self.raising_pred_rows = existential_subject_raising_adjective_rows()
         self.control_pred_rows = control_subject_adjective_rows()
         self.raising_preds = tuple(curated_template_expressions("Adj_raising_subj"))
         self.control_preds = tuple(curated_template_expressions("Adj_control_subj"))
+        self.embedded_ing_verbs = table_intersect1d(all_ing_verbs, all_non_recursive_verbs)
         self.max_sample_attempts = 512
 
     def _surface_sentence(self, aux, predicate, determiner, emb_subj, vp):
@@ -117,7 +123,7 @@ class Generator(data_generator.BenchmarkGenerator):
             # Embedded -ing verb: Zipf-filter with fallback=False; retry on empty
             try:
                 V = choose_row_for_active_zipf(
-                    get_matched_by(emb_subj, "arg_1", all_ing_verbs),
+                    get_matched_by(emb_subj, "arg_1", self.embedded_ing_verbs),
                     "verb",
                     fallback_on_empty=False,
                     error_message="No compatible existential_there_subject_raising embedded verb",

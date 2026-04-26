@@ -39,7 +39,7 @@ class Generator(data_generator.BenchmarkGenerator):
                     "verb",
                     fallback_on_empty=False,
                     error_message="No xtail-compatible purely-intransitive verb",
-                    minimum_candidates=10,
+                    minimum_candidates=24,
                 )
                 NP1 = N_to_DP_mutate(choose_matching_row(
                     V_intrans,

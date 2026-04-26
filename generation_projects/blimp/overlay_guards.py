@@ -61,6 +61,40 @@ _INTRANSITIVE_CONTRAST_BLOCKLIST = _PASSIVE_BAD_VERB_BLOCKLIST + (
     "resort", "result",
 )
 
+_TRANSITIVE_CONTRAST_AMBIGUOUS_BLOCKLIST = (
+    # These have ordinary objectless uses that make them poor bad-side choices
+    # for intransitive minimal pairs, even if the inventory currently marks
+    # only a transitive frame.
+    "blaspheme", "bluff", "interpose", "shoplift",
+)
+
+_NONPASSIVIZABLE_PARTICIPLE_VERBS = (
+    # Original-BLiMP-style intransitives whose participles stay bad in passive
+    # templates, used to avoid the head regime collapsing to a tiny repeated set.
+    "arrive", "boast", "chat", "compete", "complain", "cough", "cry",
+    "dance", "die", "disagree", "emerge", "exist", "flirt", "happen",
+    "laugh", "lie", "occur", "proceed", "progress", "react", "reply",
+    "respond", "scream", "sleep", "smile", "sneeze", "struggle",
+    "testify", "vanish", "wait", "yawn",
+)
+
+_EXISTENTIAL_SUBJECT_RAISING_VERBS = (
+    # Verbal predicates that are natural in the "there ... to be" existential
+    # frame. Broader subject-raising verbs like "promise" or "remain" are kept
+    # available for other raising paradigms but read poorly here.
+    "appear", "come", "continue", "fail", "happen", "look", "prove", "seem",
+    "tend", "turn out",
+)
+
+_EXISTENTIAL_SUBJECT_RAISING_ADJECTIVES = (
+    # Conservative high-confidence raising predicates for existential there.
+    # Excludes marginal/passive-reporting items such as "conceded" and
+    # "accepted", which are acceptable in other templates but not here.
+    "believed", "bound", "certain", "due", "estimated", "expected",
+    "forecast", "known", "likely", "projected", "reported", "said",
+    "scheduled", "supposed", "thought", "unlikely",
+)
+
 _LOW_QUALITY_OVERLAY_VERB_LEMMAS = (
     # Mostly noun/adjective-derived or name-like verb uses whose wordfreq score
     # is driven by non-verbal senses. They are valid dictionary verbs, but they
@@ -848,12 +882,31 @@ def clausal_it_adjective_rows():
 
 
 def existential_bad_control_subject_verb_rows():
-    rows = _exclude_expression_families(control_subject_verb_rows(), _EXISTENTIAL_CONTROL_SUBJECT_EXCLUDED_VERBS)
+    rows = exclude_source_lemmas(control_subject_verb_rows(), _EXISTENTIAL_CONTROL_SUBJECT_EXCLUDED_VERBS)
     return filter_rows_for_active_zipf(
         rows,
         "verb",
         fallback_on_empty=True,
         minimum_candidates=_CURATED_ZIPF_MIN_CANDIDATES,
+    )
+
+
+def existential_subject_raising_verb_rows():
+    rows = verb_rows_for_category("V_raising_subj")
+    return _curated_rows_for_expression_families(
+        rows,
+        _EXISTENTIAL_SUBJECT_RAISING_VERBS,
+        "verb",
+        expand_inflections=True,
+    )
+
+
+def existential_subject_raising_adjective_rows():
+    rows = adjective_rows_for_category("Adj_raising_subj")
+    return _curated_rows_for_expression_families(
+        rows,
+        _EXISTENTIAL_SUBJECT_RAISING_ADJECTIVES,
+        "adjective",
     )
 
 
@@ -904,6 +957,13 @@ def nonpassivizable_participle_rows():
         "0",
         get_all("strict_intrans", "1", get_all("category", "S\\NP", get_all("en", "1", get_all("verb", "1")))),
     )
+    en_intransitives = get_all("category", "S\\NP", get_all("en", "1", get_all("verb", "1")))
+    curated_rows = _rows_for_expression_families(
+        table_setdiff1d(en_intransitives, get_all("passive", "1", en_intransitives)),
+        _NONPASSIVIZABLE_PARTICIPLE_VERBS,
+        expand_inflections=True,
+    )
+    rows = table_union1d(rows, curated_rows)
     rows = exclude_transitive_source_lemmas(rows)
     rows = exclude_source_lemmas(rows, _inventory_core_trans_lemmas())
     rows = exclude_source_lemmas(rows, _INTRANSITIVE_CONTRAST_BLOCKLIST)
@@ -925,6 +985,7 @@ def pure_strict_transitive_rows():
     rows = get_all("strict_trans", "1", get_all("category", "(S\\NP)/NP", get_all("verb", "1")))
     rows = exclude_source_lemmas(rows, _inventory_core_intr_lemmas())
     rows = exclude_source_lemmas(rows, _inventory_any_intransitive_lemmas())
+    rows = exclude_source_lemmas(rows, _TRANSITIVE_CONTRAST_AMBIGUOUS_BLOCKLIST)
     return exclude_low_quality_overlay_verb_lemmas(rows)
 
 

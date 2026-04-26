@@ -65,6 +65,7 @@ class Generator(data_generator.BenchmarkGenerator):
                     "verb",
                     fallback_on_empty=False,
                     error_message="No regime-compatible transitive contrast verb",
+                    minimum_candidates=64,
                 )
                 break
             except LexicalGapError:
