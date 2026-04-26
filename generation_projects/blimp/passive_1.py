@@ -8,7 +8,7 @@ from generation_projects.blimp.overlay_guards import (
     passivizable_participle_rows,
     choose_matching_row,
     choose_matched_by_row,
-    choose_row_for_active_zipf,
+    choose_row_for_active_zipf_by_source_lemma,
     filter_plural_looking_singular_nouns,
 )
 
@@ -34,7 +34,7 @@ class Generator(data_generator.BenchmarkGenerator):
 
         for _ in range(self.max_sample_attempts):
             try:
-                V_intrans = choose_row_for_active_zipf(
+                V_intrans = choose_row_for_active_zipf_by_source_lemma(
                     self.intransitive,
                     "verb",
                     fallback_on_empty=False,
