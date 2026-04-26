@@ -81,7 +81,7 @@ _NONPASSIVIZABLE_PARTICIPLE_VERBS = (
 _PASSIVE_BAD_DIVERSITY_BLOCKLIST = (
     # These are valid nonpassivizable intransitives, but in the overlay they
     # dominate head-regime passive bad sides and make the dataset read templatic.
-    "emerge", "occur", "proceed", "progress", "remain",
+    "emerge", "occur", "prevail", "proceed", "progress", "remain", "remark",
 )
 
 _EXISTENTIAL_SUBJECT_RAISING_VERBS = (
