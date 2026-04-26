@@ -78,6 +78,12 @@ _NONPASSIVIZABLE_PARTICIPLE_VERBS = (
     "testify", "vanish", "wait", "yawn",
 )
 
+_PASSIVE_BAD_DIVERSITY_BLOCKLIST = (
+    # These are valid nonpassivizable intransitives, but in the overlay they
+    # dominate head-regime passive bad sides and make the dataset read templatic.
+    "emerge", "occur", "proceed", "progress", "remain",
+)
+
 _EXISTENTIAL_SUBJECT_RAISING_VERBS = (
     # Verbal predicates that are natural in the "there ... to be" existential
     # frame. Broader subject-raising verbs like "promise" or "remain" are kept
@@ -967,6 +973,7 @@ def nonpassivizable_participle_rows():
     rows = exclude_transitive_source_lemmas(rows)
     rows = exclude_source_lemmas(rows, _inventory_core_trans_lemmas())
     rows = exclude_source_lemmas(rows, _INTRANSITIVE_CONTRAST_BLOCKLIST)
+    rows = exclude_source_lemmas(rows, _PASSIVE_BAD_DIVERSITY_BLOCKLIST)
     rows = exclude_agentive_subject_mismatch_rows(rows)
     rows = exclude_low_quality_overlay_verb_lemmas(rows)
     return _single_token_verb_rows(rows)
