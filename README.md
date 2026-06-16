@@ -106,9 +106,6 @@ Change the Zipf bounds and output directory for `tail` and `xtail`.
 
 ## Development Notes
 
-- Generated outputs, caches, logs, and overlay files are ignored by Git.
-- The tracked `data/freqblimp` directory is the curated public dataset, not a
-  scratch output directory.
 - `generation_projects/blimp/tools/` contains generator maintenance helpers such
   as feasibility and overlay coverage probes.
 - Keep overlay-facing logic memory-conscious: prefer streaming, capped scans,
