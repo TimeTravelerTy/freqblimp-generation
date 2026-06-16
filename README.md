@@ -5,7 +5,7 @@ generation pipeline. This repository contains the modified BLiMP generator, the
 base vocabulary, and the final head/tail/xtail datasets used in the paper.
 
 Evaluation, scoring, and paper-analysis scripts live in the companion
-[`freq-blimp-eval`](https://github.com/TimeTravelerTy/blimp-rare) repository.
+[`freq-blimp-eval`](https://github.com/TimeTravelerTy/freq-blimp) repository.
 
 ## What Is Included
 
