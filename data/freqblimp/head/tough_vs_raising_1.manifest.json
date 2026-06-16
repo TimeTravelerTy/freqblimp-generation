@@ -1,0 +1,47 @@
+{
+  "frequency_policy": {
+    "frequency_controlled_pos": [
+      "adjective",
+      "noun",
+      "verb"
+    ],
+    "frequency_overlay_enabled": true,
+    "frequency_seed": 0,
+    "frequency_source": "wordfreq",
+    "frequency_weighted_sampling": false,
+    "frequency_zipf_max": {
+      "adjective": 5.5,
+      "noun": 5.5,
+      "verb": 5.5
+    },
+    "frequency_zipf_min": {
+      "adjective": 3.5,
+      "noun": 3.5,
+      "verb": 3.5
+    },
+    "frequency_zipf_temp": 1.0
+  },
+  "generator": {
+    "UID": "tough_vs_raising_1",
+    "field": "syntax_semantics",
+    "lexically_identical": false,
+    "linguistics_term": "control_raising",
+    "one_prefix_method": false,
+    "simple_LM_method": true,
+    "two_prefix_method": false
+  },
+  "run": {
+    "duration_seconds": 16.707,
+    "failure_limit": 5000,
+    "failures": 0,
+    "finished_at": "2026-04-28T23:53:20.155137",
+    "generated_pairs": 1000,
+    "output_path": "outputs/strictfix_11_regen_20260428/head/tough_vs_raising_1.jsonl",
+    "requested_pairs": 1000,
+    "started_at": "2026-04-28T23:53:03.448356"
+  },
+  "runtime": {
+    "progress_enabled": false,
+    "trace_recording_enabled": false
+  }
+}

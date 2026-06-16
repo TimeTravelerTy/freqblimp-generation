@@ -1,0 +1,47 @@
+{
+  "frequency_policy": {
+    "frequency_controlled_pos": [
+      "adjective",
+      "noun",
+      "verb"
+    ],
+    "frequency_overlay_enabled": true,
+    "frequency_seed": 0,
+    "frequency_source": "wordfreq",
+    "frequency_weighted_sampling": false,
+    "frequency_zipf_max": {
+      "adjective": 2.2,
+      "noun": 2.2,
+      "verb": 2.2
+    },
+    "frequency_zipf_min": {
+      "adjective": 1.2,
+      "noun": 1.2,
+      "verb": 1.2
+    },
+    "frequency_zipf_temp": 1.0
+  },
+  "generator": {
+    "UID": "drop_argument",
+    "field": "syntax",
+    "lexically_identical": false,
+    "linguistics_term": "argument_structure",
+    "one_prefix_method": false,
+    "simple_LM_method": true,
+    "two_prefix_method": false
+  },
+  "run": {
+    "duration_seconds": 9.957,
+    "failure_limit": null,
+    "failures": 0,
+    "finished_at": "2026-04-29T14:33:05.516364",
+    "generated_pairs": 1000,
+    "output_path": "outputs/drop_argument_diverse_regen_20260429/xtail/drop_argument.jsonl",
+    "requested_pairs": 1000,
+    "started_at": "2026-04-29T14:32:55.558909"
+  },
+  "runtime": {
+    "progress_enabled": false,
+    "trace_recording_enabled": false
+  }
+}

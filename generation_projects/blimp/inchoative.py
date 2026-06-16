@@ -5,6 +5,7 @@ from utils.randomize import choice, uniform_choice
 
 from generation_projects.blimp.overlay_guards import (
     causative_alternating_verb_rows,
+    choose_row_for_active_zipf_by_source_lemma,
     dp_buildable_nominal_rows,
     filter_rows_for_active_zipf,
     inchoative_bad_transitive_rows,
@@ -43,7 +44,12 @@ class Generator(data_generator.BenchmarkGenerator):
             raise LexicalGapError("No xtail-compatible alternating verbs for inchoative")
 
         for _ in range(self.max_sample_attempts):
-            V_inch = choice(verb_pool)
+            V_inch = choose_row_for_active_zipf_by_source_lemma(
+                self.alternating_verbs,
+                "verb",
+                fallback_on_empty=False,
+                error_message="No xtail-compatible alternating verbs for inchoative",
+            )
             if V_inch["category"] == "(S\\NP)/NP":
                 if V_inch["3sg"] == "1":
                     subj_pool = filter_rows_for_active_zipf(
@@ -82,7 +88,12 @@ class Generator(data_generator.BenchmarkGenerator):
                 )
                 if len(bad_candidates) == 0:
                     continue
-                V_trans = choice(bad_candidates)
+                V_trans = choose_row_for_active_zipf_by_source_lemma(
+                    bad_candidates,
+                    "verb",
+                    fallback_on_empty=False,
+                    error_message="No regime-compatible bad transitive verb",
+                )
             break
         else:
             raise LexicalGapError("No xtail-compatible inchoative/transitive pair found after bounded retries")

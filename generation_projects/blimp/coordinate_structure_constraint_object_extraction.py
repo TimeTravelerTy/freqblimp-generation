@@ -4,7 +4,7 @@ from utils.conjugate import *
 from utils.randomize import choice
 from utils.vocab_sets import *
 
-from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf, pure_transitive_rows
 
 
 class CSCGenerator(data_generator.BenchmarkGenerator):
@@ -18,6 +18,7 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
                          lexically_identical=False)
         self.all_safe_nouns = np.setdiff1d(all_nouns, all_singular_neuter_animate_nouns)
         self.all_safe_common_nouns = np.intersect1d(self.all_safe_nouns, all_common_nouns)
+        self.extraction_verbs = table_intersect1d(pure_transitive_rows(), all_non_finite_verbs)
 
     def sample(self):
         # What do        John and Mary help?
@@ -25,7 +26,7 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
         # What does     John help and Mary?
         # wh   V_do_bad N1   V1   and N2
 
-        V1 = choice(filter_rows_for_active_zipf(all_non_finite_transitive_verbs, "verb"))
+        V1 = choice(filter_rows_for_active_zipf(self.extraction_verbs, "verb"))
         N1 = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V1, "arg_1", all_nouns), "noun")))
 
         V_do_bad = return_aux(V1, N1, allow_negated=False)

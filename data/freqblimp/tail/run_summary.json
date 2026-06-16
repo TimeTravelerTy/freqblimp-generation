@@ -1,0 +1,17 @@
+{
+  "continue_on_error": false,
+  "error_count": 0,
+  "jobs": 1,
+  "ok_count": 1,
+  "requested_uids": [
+    "ellipsis_n_bar_2"
+  ],
+  "results": [
+    {
+      "duration_seconds": 321.923,
+      "output_path": "/gs/fs/tga-sip_arase/tyrone/freq-blimp/outputs/full_3regimes_701a017_20260425/tail/ellipsis_n_bar_2.jsonl",
+      "status": "ok",
+      "uid": "ellipsis_n_bar_2"
+    }
+  ]
+}

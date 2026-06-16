@@ -4,19 +4,24 @@ from utils.conjugate import *
 from utils.randomize import choice, uniform_choice
 from utils.vocab_sets import *
 
-from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+from generation_projects.blimp.overlay_guards import (
+    filter_rows_for_active_zipf,
+    pure_strict_transitive_rows,
+    pure_transitive_rows,
+)
 
 class FillerGapGenerator(data_generator.BenchmarkGenerator):
     def __init__(self):
         super().__init__(field="syntax",
                          linguistics="filler_gap_dependency",
-                         uid="wh_vs_that_with_gap_long_distance",
+        uid="wh_vs_that_with_gap_long_distance",
                          simple_lm_method=True,
                          one_prefix_method=False,
                          two_prefix_method=False,
                          lexically_identical=False)
         self.embedding_verbs = get_all("responsive", "1")
-        self.robustly_transitive_verbs = get_all("strict_trans", "1")
+        self.robustly_transitive_verbs = pure_strict_transitive_rows()
+        self.transitive_verbs = pure_transitive_rows()
 
     def sample(self):
         # I  know what the lion that roamed the plains devoured.
@@ -32,7 +37,7 @@ class FillerGapGenerator(data_generator.BenchmarkGenerator):
 
         x = random.random()
         if x < 1 / 2:
-            V_rel = choice(filter_rows_for_active_zipf(get_matched_by(N2, "arg_1", all_transitive_verbs), "verb"))
+            V_rel = choice(filter_rows_for_active_zipf(get_matched_by(N2, "arg_1", self.transitive_verbs), "verb"))
             N_rel = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V_rel, "arg_2", all_nouns), "noun")))
         else:
             V_rel = choice(filter_rows_for_active_zipf(get_matched_by(N2, "arg_1", all_intransitive_verbs), "verb"))

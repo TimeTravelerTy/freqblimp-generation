@@ -6,6 +6,7 @@ from utils.randomize import choice, uniform_choice
 from generation_projects.blimp.overlay_guards import (
     causative_alternating_verb_rows,
     causative_bad_intransitive_rows,
+    choose_row_for_active_zipf_by_source_lemma,
     dp_buildable_nominal_rows,
     filter_rows_for_active_zipf,
 )
@@ -40,7 +41,12 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
             raise LexicalGapError("No xtail-compatible alternating verbs for causative")
 
         for _ in range(self.max_sample_attempts):
-            V_cause = choice(verb_pool)
+            V_cause = choose_row_for_active_zipf_by_source_lemma(
+                self.alternating_verbs,
+                "verb",
+                fallback_on_empty=False,
+                error_message="No xtail-compatible alternating verbs for causative",
+            )
             if V_cause["category"] == "S\\NP":
                 obj_pool = filter_rows_for_active_zipf(
                     get_matches_of(V_cause, "arg_1", self.safe_nominals), "noun", fallback_on_empty=False
@@ -94,7 +100,12 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
                 )
                 if len(bad_candidates) == 0:
                     continue
-                V_intrans = choice(bad_candidates)
+                V_intrans = choose_row_for_active_zipf_by_source_lemma(
+                    bad_candidates,
+                    "verb",
+                    fallback_on_empty=False,
+                    error_message="No regime-compatible bad intransitive verb",
+                )
             break
         else:
             raise LexicalGapError("No xtail-compatible causative/intransitive pair found after bounded retries")

@@ -138,15 +138,15 @@ _CONTROL_SUBJECT_VERBS = (
 
 _RAISING_ADJECTIVES = (
     # core modal/dispositional
-    "likely", "unlikely", "sure", "certain", "supposed", "going", "bound", "apt",
+    "likely", "unlikely", "sure", "certain", "supposed", "bound", "apt",
     "liable", "set", "due", "prone", "wont",
     # fate/disposition
-    "fated", "destined", "doomed", "slated", "scheduled", "poised", "calculated",
+    "fated", "destined", "doomed", "slated", "scheduled", "poised",
     # canonical epistemic passives (unambiguous subject-raising reading)
     "rumored", "reputed", "alleged", "expected", "anticipated", "predicted",
     "estimated", "projected", "forecast", "reported", "believed", "thought",
     "assumed", "known", "understood", "claimed", "presumed", "suspected", "deemed",
-    "said", "acknowledged", "recognized", "accepted", "conceded", "noted",
+    "said", "acknowledged", "recognized", "noted",
     "asserted", "established", "demonstrated",
     # excluded: deontic (required, needed, mandated, stipulated, specified),
     # attitudinal (feared, hoped), and marginal hypothetical/inferential
@@ -167,18 +167,16 @@ _TOUGH_ADJECTIVES = (
     "wonderful", "terrible", "horrible", "awful", "difficult", "dangerous",
     "impossible", "interesting", "exciting", "amazing", "relaxing", "stressful",
     "awkward", "strange", "tiring", "painful", "annoying", "tricky", "risky",
-    "useful", "pointless", "delightful", "enjoyable", "fascinating", "engaging",
+    "useful", "delightful", "enjoyable", "fascinating", "engaging",
     "entertaining", "challenging", "complicated", "confusing", "frustrating",
     "exhausting", "draining", "demanding", "intimidating", "charming", "refreshing",
     "comforting", "soothing", "calming", "satisfying", "disappointing", "disturbing",
     "shocking", "embarrassing", "frightening", "tedious", "tiresome", "dreadful",
-    "costly", "wasteful", "stimulating", "enlightening", "educational",
-    "informative", "illuminating", "effortless", "breezy", "laborious", "arduous",
+    "stimulating", "effortless", "breezy", "laborious", "arduous",
     "burdensome", "onerous", "strenuous", "exasperating", "infuriating", "maddening",
-    "monotonous", "unbearable", "intolerable", "insufferable", "excruciating",
-    "hazardous", "treacherous", "perilous", "formidable", "loathsome", "repulsive",
-    "irksome", "wearisome", "cumbersome", "unsettling", "unnerving", "disarming",
-    "invigorating", "uplifting", "edifying", "fruitless", "futile",
+    "unbearable", "intolerable", "insufferable", "excruciating",
+    "formidable", "loathsome", "repulsive",
+    "irksome", "wearisome", "cumbersome", "unsettling", "unnerving",
 )
 
 _CLAUSAL_IT_ADJECTIVES = (
@@ -206,36 +204,62 @@ _EXISTENTIAL_CONTROL_SUBJECT_EXCLUDED_VERBS = (
 )
 
 _DROP_ARGUMENT_GOOD_VERBS = (
-    # original core list
-    "aid", "approach", "ascend", "attack", "buy", "clean", "climb down",
-    "climb up", "descend", "exit", "explore", "forget", "harm", "help",
-    "hinder", "investigate", "know", "leave", "love", "observe", "pass",
-    "purchase", "remember", "run around", "see", "sell", "skate around",
-    "tour", "visit", "watch",
+    # Verbs with natural implicit-object or absolute transitive readings in
+    # short BLiMP-style clauses. Pure intransitives from the original paradigm
+    # are intentionally excluded from generated swaps.
+    "bake", "baste", "bathe", "bet", "braise", "breastfeed", "brew",
+    "broil", "blurt", "bunt", "buy", "carve", "chew", "chomp", "clean",
+    "cook", "debug", "draw", "drawl", "drink", "drive", "drill",
+    "dust", "eat", "embroider", "enunciate", "explore", "farm", "fish",
+    "fry", "grill", "guzzle", "help", "hunt", "imbibe", "investigate",
+    "iron", "knead", "knit", "learn", "mop", "negotiate", "pack",
+    "paint", "peddle", "perform", "pilfer", "play", "poach",
+    "practice", "preach", "read", "recite", "rehearse",
+    "ride", "roast", "row", "saute", "scavenge", "scrawl", "scribble",
+    "scrub", "sculpt", "sell", "sew", "shave", "shoot", "shop", "shoplift",
+    "shower", "sing", "sketch", "skim", "smoke", "study",
+    "sweep", "teach", "trade", "train", "type",
+    "vacuum", "wash", "watch", "weave", "weed", "whittle", "write",
 )
 
 _DROP_ARGUMENT_BAD_VERBS = (
-    # conservative null-object-resistant transitive verbs
-    "abandon", "address", "admire", "adopt", "affect",
-    "alter", "apprehend", "arrest", "avoid", "banish", "betray", "blame",
-    "block", "capture", "confiscate", "contain",
-    "contradict", "convince", "criticize", "damage", "defeat", "delete",
-    "demolish", "deny", "depict", "deprive", "destroy", "devour", "dismiss",
-    "disturb", "elect", "embrace", "encounter", "endorse", "erase", "evict",
-    "examine", "exclude", "greet", "guard", "humiliate", "identify",
-    "ignore", "imitate", "imprison", "interrogate", "interrupt", "intimidate",
-    "involve", "kidnap", "mention", "mock", "murder", "name", "overthrow",
-    "persuade", "possess", "praise", "prevent", "punish", "question", "quote",
-    "reject", "release", "replace", "rescue", "require", "ridicule", "rob",
-    "seize", "select", "solve", "sue", "surprise", "survey",
-    "transport", "undermine", "upset", "value", "verify", "witness",
+    # Null-object-resistant transitives. These avoid common absolute or
+    # habitual readings so the objectless bad side remains degraded.
+    "abduct", "abhor", "abolish", "abuse", "accuse", "acquire", "admire",
+    "admonish", "adore", "affect", "allocate", "arrest", "assassinate",
+    "avoid", "behead", "blame", "bombard", "captivate", "carjack",
+    "castigate", "chasten", "coerce", "confiscate", "constitute", "debone",
+    "deceive", "defame", "deflower", "denounce", "denude", "deport",
+    "destroy", "detain", "dismantle", "embolden", "encumber", "enslave",
+    "eradicate", "extort", "fondle", "hoodwink", "hospitalize", "impale",
+    "imprison", "injure", "kidnap", "lambaste", "misguide", "necessitate",
+    "notify", "ostracize", "outsmart", "outwit", "paralyze", "persuade",
+    "possess", "preoccupy", "rebuke", "reprove", "require", "reseat",
+    "resent", "respect", "retrieve", "revile", "ridicule", "scrutinize",
+    "seclude", "seduce", "subjugate", "suppress", "swindle", "torment",
+    "uproot", "vilify", "wreathe",
+)
+
+_ANIMATE_SUBJECT_TRANSITIVE_VERBS = (
+    "abduct", "abet", "abhor", "admonish", "admire", "advise", "apprehend",
+    "appreciate", "arrest", "assail", "assassinate", "babysit", "badmouth",
+    "bamboozle", "banish", "baptize", "behead", "belittle", "blackmail",
+    "blame", "boycott", "cajole", "castigate", "censure", "chasten",
+    "chastise", "chide", "clobber", "coerce", "congratulate", "criticize",
+    "deceive", "defame", "defraud", "delude", "denigrate", "deplore",
+    "deport", "depose", "deride", "despise", "detest", "disabuse",
+    "disdain", "dissuade", "elect", "envy", "eulogize", "evict", "exhort",
+    "extol", "fleece", "flog", "forgive", "greet", "hate", "hire", "hug",
+    "humiliate", "ignore", "insult", "interrogate", "kidnap", "kiss",
+    "loathe", "love", "mock", "murder", "persuade", "praise", "question",
+    "ridicule", "sue", "thank", "visit",
 )
 
 _CAUSATIVE_ALTERNATING_VERBS = (
     # thermal / phase change
     "acidify", "bake", "burn", "caramelize", "char", "coagulate", "condense",
     "congeal", "curdle", "evaporate", "freeze", "liquefy", "melt", "overcook",
-    "parch", "scald", "scorch", "soak", "solidify", "vaporize", "wash",
+    "parch", "scald", "scorch", "soak", "solidify", "vaporize",
     # mechanical / structural change
     "calcify", "cheapen", "chip", "crack", "crumple", "decouple", "discolor",
     "dislocate", "distend", "entangle", "fade", "flatten", "fold", "fray",
@@ -246,12 +270,11 @@ _CAUSATIVE_ALTERNATING_VERBS = (
     # color / luminance change
     "blacken", "brighten", "darken", "dim",
     # motion / position change
-    "close", "drop", "fling open", "hide", "hide away", "move", "open", "roll",
-    "shut", "sit down", "slow", "speed up", "spin around", "stand up", "stop",
+    "close", "drop", "fling open", "move", "open", "roll",
+    "shut", "slow", "speed up", "spin around", "stop",
     "tip over", "turn", "wake up",
     # social / process change
-    "accelerate", "assemble", "awaken", "change", "crash", "dry", "grow",
-    "maneuver", "marry", "reunite", "steer", "train",
+    "accelerate", "awaken", "change", "crash", "dry", "grow",
     # other
     "benefit", "worry",
 )
@@ -259,6 +282,21 @@ _CAUSATIVE_ALTERNATING_VERBS = (
 _CAUSATIVE_BAD_EXTRA_INTRANSITIVES = (
     "appear", "disappear", "emerge", "exist", "happen", "occur", "remain",
     "vanish",
+)
+
+_CAUSATIVE_BAD_SAFE_INTRANSITIVES = (
+    "abstain", "balk", "banter", "bask", "bluster", "cavort", "clamber",
+    "collude", "commiserate", "congregate", "converse", "cower", "decamp",
+    "defecate", "desist", "despair", "disembark", "drool", "eavesdrop",
+    "emigrate", "empathize", "exult", "fawn", "fidget", "flounce", "gloat",
+    "gripe", "grouse", "hibernate", "hitchhike", "hyperventilate", "jest",
+    "languish", "leer", "lisp", "loll", "luxuriate", "meditate", "mew",
+    "molt", "mosey", "pant", "perish", "persevere", "perspire", "picnic",
+    "prattle", "procreate", "quack", "quaver", "recoil", "remonstrate",
+    "retaliate", "ruminate", "salivate", "skulk", "sleepwalk", "slink",
+    "slobber", "slog", "slouch", "sprawl", "sulk", "sunbathe", "sympathize",
+    "tango", "theorize", "toil", "toddle", "urinate", "vacillate", "vamoose",
+    "wallow", "wince", "writhe", "yak", "yammer",
 )
 
 COUNT_TRIGGERS = {
@@ -535,12 +573,21 @@ def exclude_source_lemmas(table, lemmas):
     return table[keep]
 
 
+def source_lemmas_for_rows(table):
+    return frozenset(_source_lemma_for_row(row).lower() for row in table)
+
+
+def exclude_source_lemmas_present_in(table, excluded_rows):
+    return exclude_source_lemmas(table, source_lemmas_for_rows(excluded_rows))
+
+
 def exclude_low_quality_overlay_verb_lemmas(table):
     return exclude_source_lemmas(table, _LOW_QUALITY_OVERLAY_VERB_LEMMAS)
 
 
 def safe_transitive_verb_rows():
     rows = get_all("category", "(S\\NP)/NP", get_all("verb", "1"))
+    rows = exclude_source_lemmas(rows, _inventory_core_intr_lemmas())
     return exclude_low_quality_overlay_verb_lemmas(rows)
 
 
@@ -1016,7 +1063,6 @@ def pure_strict_intransitive_rows():
 def pure_strict_transitive_rows():
     rows = get_all("strict_trans", "1", get_all("category", "(S\\NP)/NP", get_all("verb", "1")))
     rows = exclude_source_lemmas(rows, _inventory_core_intr_lemmas())
-    rows = exclude_source_lemmas(rows, _inventory_any_intransitive_lemmas())
     rows = exclude_source_lemmas(rows, _TRANSITIVE_CONTRAST_AMBIGUOUS_BLOCKLIST)
     return exclude_low_quality_overlay_verb_lemmas(rows)
 
@@ -1028,16 +1074,30 @@ def pure_transitive_rows():
 
 
 def drop_argument_good_verb_rows():
-    rows = _rows_for_expression_families(get_all("verb", "1"), _DROP_ARGUMENT_GOOD_VERBS, expand_inflections=True)
-    return get_all("strict_trans", "0", rows)
+    rows = _rows_for_expression_families(
+        get_all("category", "(S\\NP)/NP", get_all("verb", "1")),
+        _DROP_ARGUMENT_GOOD_VERBS,
+        expand_inflections=True,
+    )
+    return exclude_low_quality_overlay_verb_lemmas(get_all("ing", "0", get_all("en", "0", rows)))
 
 
 def drop_argument_bad_verb_rows():
-    return _rows_for_expression_families(
+    rows = _rows_for_expression_families(
         get_all("category", "(S\\NP)/NP"),
         _DROP_ARGUMENT_BAD_VERBS,
         expand_inflections=True,
     )
+    return get_all("ing", "0", get_all("en", "0", rows))
+
+
+def animate_subject_transitive_verb_rows():
+    rows = _rows_for_expression_families(
+        get_all("category", "(S\\NP)/NP", get_all("verb", "1")),
+        _ANIMATE_SUBJECT_TRANSITIVE_VERBS,
+        expand_inflections=True,
+    )
+    return exclude_low_quality_overlay_verb_lemmas(rows)
 
 
 def finite_clause_embedding_verb_rows():
@@ -1065,14 +1125,14 @@ def tough_vs_raising_2_outer_verb_rows():
 
 
 def inchoative_bad_transitive_rows():
-    rows = get_all("category", "(S\\NP)/NP", get_all("verb", "1"))
-    # Keep only plain transitive surface forms; PP/particle verbs are excluded
-    # structurally rather than by a lexical denylist.
-    expr = np.asarray(rows["expression"], dtype=str)
-    plain_rows = rows[np.array([" " not in value for value in expr], dtype=bool)]
+    rows = _rows_for_expression_families(
+        get_all("category", "(S\\NP)/NP", get_all("verb", "1")),
+        _DROP_ARGUMENT_BAD_VERBS,
+        expand_inflections=True,
+    )
     alternating_roots = set(map(str, causative_alternating_verb_rows()["root"]))
-    keep_mask = ~np.isin(np.asarray(plain_rows["root"], dtype=str), list(alternating_roots))
-    return plain_rows[keep_mask]
+    keep_mask = ~np.isin(np.asarray(rows["root"], dtype=str), list(alternating_roots))
+    return exclude_low_quality_overlay_verb_lemmas(rows[keep_mask])
 
 
 def causative_alternating_verb_rows():
@@ -1093,22 +1153,19 @@ def causative_alternating_verb_rows():
 
 def causative_bad_intransitive_rows():
     rows = get_all("category", "S\\NP", get_all("verb", "1"))
-    strict_rows = get_all("strict_intrans", "1", rows)
-    extra_rows = _rows_for_expression_families(
+    safe_intransitive_roots = tuple(dict.fromkeys(
+        tuple(_NONPASSIVIZABLE_PARTICIPLE_VERBS)
+        + tuple(_CAUSATIVE_BAD_EXTRA_INTRANSITIVES)
+        + tuple(_CAUSATIVE_BAD_SAFE_INTRANSITIVES)
+    ))
+    combined = _rows_for_expression_families(
         rows,
-        _CAUSATIVE_BAD_EXTRA_INTRANSITIVES,
+        safe_intransitive_roots,
         expand_inflections=True,
     )
-    combined = table_union1d(strict_rows, extra_rows)
     alternating_roots = set(map(str, causative_alternating_verb_rows()["root"]))
-    transitive_exprs = set(
-        map(str, get_all("category", "(S\\NP)/NP", get_all("verb", "1"))["expression"])
-    )
     keep_mask = ~np.isin(np.asarray(combined["root"], dtype=str), list(alternating_roots))
-    keep_mask &= ~np.isin(np.asarray(combined["expression"], dtype=str), list(transitive_exprs))
-    rows = exclude_source_lemmas(combined[keep_mask], _INTRANSITIVE_CONTRAST_BLOCKLIST)
-    rows = exclude_agentive_subject_mismatch_rows(rows)
-    return exclude_low_quality_overlay_verb_lemmas(rows)
+    return exclude_low_quality_overlay_verb_lemmas(combined[keep_mask])
 
 
 def requirement_from_text(*parts: Iterable[object]) -> Optional[str]:

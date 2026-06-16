@@ -3,7 +3,7 @@ from utils.constituent_building import *
 from utils.conjugate import *
 from utils.randomize import choice, uniform_choice
 
-from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf, pure_strict_transitive_rows
 
 class Generator(data_generator.BenchmarkGenerator):
     def __init__(self):
@@ -17,6 +17,7 @@ class Generator(data_generator.BenchmarkGenerator):
 
         self.responsive_verbs = get_all("responsive", "1", all_non_finite_verbs)
         self.pronouns = get_all("category_2", "proNOM")
+        self.embedded_verbs = pure_strict_transitive_rows()
 
     def sample(self):
         # What do      you  know  he  had     bought?
@@ -27,7 +28,7 @@ class Generator(data_generator.BenchmarkGenerator):
         V_mat = uniform_choice(self.responsive_verbs)
         Subj = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V_mat, "arg_1", all_nouns), "noun")))
         Aux_mat = return_aux(V_mat, Subj)
-        V_emb = choice(filter_rows_for_active_zipf(all_transitive_verbs, "verb"))
+        V_emb = choice(filter_rows_for_active_zipf(self.embedded_verbs, "verb"))
         Pro = choice(get_matches_of(V_emb, "arg_1", get_matched_by(Subj, "arg_1", self.pronouns)))
         Wh1 = choice(get_matches_of(V_emb, "arg_2", all_wh_words))
         Wh2 = choice(get_matches_of(V_emb, "arg_1", all_wh_words))

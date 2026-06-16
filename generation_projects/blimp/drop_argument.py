@@ -5,7 +5,7 @@ from utils.conjugate import *
 from generation_projects.blimp.overlay_guards import (
     choose_matching_row,
     choose_matched_by_row,
-    choose_row_for_active_zipf,
+    choose_row_for_active_zipf_by_source_lemma,
     dp_buildable_nominal_rows,
     drop_argument_bad_verb_rows,
     drop_argument_good_verb_rows,
@@ -38,12 +38,12 @@ class CSCGenerator(data_generator.BenchmarkGenerator):
 
         for _ in range(self.max_sample_attempts):
             try:
-                V_non_strict = choose_row_for_active_zipf(
+                V_non_strict = choose_row_for_active_zipf_by_source_lemma(
                     self.drop_arg_transitive,
                     "verb",
                     fallback_on_empty=False,
                     error_message="No xtail-compatible drop-argument verbs",
-                    minimum_candidates=10,
+                    minimum_candidates=64,
                 )
                 Subj = N_to_DP_mutate(choose_matching_row(
                     V_non_strict,

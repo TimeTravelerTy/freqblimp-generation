@@ -1,0 +1,17 @@
+{
+  "continue_on_error": false,
+  "error_count": 0,
+  "jobs": 1,
+  "ok_count": 1,
+  "requested_uids": [
+    "principle_A_reconstruction"
+  ],
+  "results": [
+    {
+      "duration_seconds": 4244.534,
+      "output_path": "/gs/fs/tga-sip_arase/tyrone/freq-blimp/outputs/full_3regimes_701a017_20260425/head/principle_A_reconstruction.jsonl",
+      "status": "ok",
+      "uid": "principle_A_reconstruction"
+    }
+  ]
+}

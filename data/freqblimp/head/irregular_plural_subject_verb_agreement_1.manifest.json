@@ -1,0 +1,47 @@
+{
+  "frequency_policy": {
+    "frequency_controlled_pos": [
+      "adjective",
+      "noun",
+      "verb"
+    ],
+    "frequency_overlay_enabled": true,
+    "frequency_seed": 0,
+    "frequency_source": "wordfreq",
+    "frequency_weighted_sampling": false,
+    "frequency_zipf_max": {
+      "adjective": 5.5,
+      "noun": 5.5,
+      "verb": 5.5
+    },
+    "frequency_zipf_min": {
+      "adjective": 3.5,
+      "noun": 3.5,
+      "verb": 3.5
+    },
+    "frequency_zipf_temp": 1.0
+  },
+  "generator": {
+    "UID": "irregular_plural_subject_verb_agreement_1",
+    "field": "morphology",
+    "lexically_identical": false,
+    "linguistics_term": "subject_verb_agreement",
+    "one_prefix_method": true,
+    "simple_LM_method": true,
+    "two_prefix_method": false
+  },
+  "run": {
+    "duration_seconds": 183.199,
+    "failure_limit": 50000,
+    "failures": 15,
+    "finished_at": "2026-04-25T19:15:06.973229",
+    "generated_pairs": 1000,
+    "output_path": "/gs/fs/tga-sip_arase/tyrone/freq-blimp/outputs/full_3regimes_701a017_20260425/head/irregular_plural_subject_verb_agreement_1.jsonl",
+    "requested_pairs": 1000,
+    "started_at": "2026-04-25T19:12:03.773852"
+  },
+  "runtime": {
+    "progress_enabled": false,
+    "trace_recording_enabled": false
+  }
+}

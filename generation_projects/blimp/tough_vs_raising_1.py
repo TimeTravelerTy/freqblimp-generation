@@ -6,6 +6,7 @@ from generation_projects.blimp.overlay_guards import (
     choose_matching_row,
     choose_row_for_active_zipf,
     dp_buildable_nominal_rows,
+    pure_strict_transitive_rows,
     subject_raising_adjective_rows,
     tough_adjective_rows,
 )
@@ -22,7 +23,7 @@ class Generator(data_generator.BenchmarkGenerator):
 
         self.raising_preds = subject_raising_adjective_rows()
         self.tough_preds = tough_adjective_rows()
-        self.strict_transitive = get_all("strict_trans", "1")
+        self.strict_transitive = get_all("bare", "1", pure_strict_transitive_rows())
         self.safe_nominals = dp_buildable_nominal_rows()
         self.max_sample_attempts = 128
 

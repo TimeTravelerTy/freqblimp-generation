@@ -4,7 +4,7 @@ from utils.conjugate import *
 from utils.randomize import choice
 from utils.vocab_sets import *
 
-from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf
+from generation_projects.blimp.overlay_guards import filter_rows_for_active_zipf, pure_transitive_rows
 
 class Generator(data_generator.BenchmarkGenerator):
     def __init__(self):
@@ -17,6 +17,8 @@ class Generator(data_generator.BenchmarkGenerator):
                          lexically_identical=True)
         self.all_D_wh = get_all("category_2", "D_wh")
         self.which_what = np.append(get_all_conjunctive([("expression", "which")], self.all_D_wh), get_all_conjunctive([("expression", "what")], self.all_D_wh))
+        self.extraction_verbs = table_intersect1d(pure_transitive_rows(), all_non_finite_verbs)
+        self.transitive_verbs = pure_transitive_rows()
 
     def sample(self):
         # What pie did  John cook and Mary eat?
@@ -24,11 +26,11 @@ class Generator(data_generator.BenchmarkGenerator):
         # What did  John cook pie and Mary eat?
         # wh   V_do N1   V1   N3  and N2   V2_match
 
-        V1 = choice(filter_rows_for_active_zipf(all_non_finite_transitive_verbs, "verb"))
+        V1 = choice(filter_rows_for_active_zipf(self.extraction_verbs, "verb"))
         N1 = N_to_DP_mutate(choice(filter_rows_for_active_zipf(get_matches_of(V1, "arg_1", all_nouns), "noun")))
         N3 = choice(filter_rows_for_active_zipf(get_matches_of(V1, "arg_2", get_all('pl', '1', all_common_nouns)), "noun"))
         V_do = return_aux(V1, N1, allow_negated=False)
-        V2 = choice(filter_rows_for_active_zipf(get_matched_by(N3, "arg_2", all_transitive_verbs), "verb"))
+        V2 = choice(filter_rows_for_active_zipf(get_matched_by(N3, "arg_2", self.transitive_verbs), "verb"))
 
         # make sure V1 and V2 are the same form
         Verb2 = get_all("root", V2["root"])

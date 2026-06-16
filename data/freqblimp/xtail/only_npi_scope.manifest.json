@@ -1,0 +1,47 @@
+{
+  "frequency_policy": {
+    "frequency_controlled_pos": [
+      "adjective",
+      "noun",
+      "verb"
+    ],
+    "frequency_overlay_enabled": true,
+    "frequency_seed": 0,
+    "frequency_source": "wordfreq",
+    "frequency_weighted_sampling": false,
+    "frequency_zipf_max": {
+      "adjective": 2.2,
+      "noun": 2.2,
+      "verb": 2.2
+    },
+    "frequency_zipf_min": {
+      "adjective": 1.2,
+      "noun": 1.2,
+      "verb": 1.2
+    },
+    "frequency_zipf_temp": 1.0
+  },
+  "generator": {
+    "UID": "only_npi_scope",
+    "field": "syntax_semantics",
+    "lexically_identical": true,
+    "linguistics_term": "npi_licensing",
+    "one_prefix_method": false,
+    "simple_LM_method": true,
+    "two_prefix_method": true
+  },
+  "run": {
+    "duration_seconds": 233.186,
+    "failure_limit": 50000,
+    "failures": 164,
+    "finished_at": "2026-04-25T19:39:16.488841",
+    "generated_pairs": 1000,
+    "output_path": "/gs/fs/tga-sip_arase/tyrone/freq-blimp/outputs/full_3regimes_701a017_20260425/xtail/only_npi_scope.jsonl",
+    "requested_pairs": 1000,
+    "started_at": "2026-04-25T19:35:23.303151"
+  },
+  "runtime": {
+    "progress_enabled": false,
+    "trace_recording_enabled": false
+  }
+}

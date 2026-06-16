@@ -1,0 +1,47 @@
+{
+  "frequency_policy": {
+    "frequency_controlled_pos": [
+      "adjective",
+      "noun",
+      "verb"
+    ],
+    "frequency_overlay_enabled": true,
+    "frequency_seed": 0,
+    "frequency_source": "wordfreq",
+    "frequency_weighted_sampling": false,
+    "frequency_zipf_max": {
+      "adjective": 5.5,
+      "noun": 5.5,
+      "verb": 5.5
+    },
+    "frequency_zipf_min": {
+      "adjective": 3.5,
+      "noun": 3.5,
+      "verb": 3.5
+    },
+    "frequency_zipf_temp": 1.0
+  },
+  "generator": {
+    "UID": "causative",
+    "field": "syntax",
+    "lexically_identical": false,
+    "linguistics_term": "argument_structure",
+    "one_prefix_method": false,
+    "simple_LM_method": true,
+    "two_prefix_method": false
+  },
+  "run": {
+    "duration_seconds": 46.903,
+    "failure_limit": 5000,
+    "failures": 0,
+    "finished_at": "2026-04-28T17:30:28.183852",
+    "generated_pairs": 1000,
+    "output_path": "outputs/problematic_regen_20260428/head/causative.jsonl",
+    "requested_pairs": 1000,
+    "started_at": "2026-04-28T17:29:41.280550"
+  },
+  "runtime": {
+    "progress_enabled": false,
+    "trace_recording_enabled": false
+  }
+}

@@ -1,79 +1,127 @@
-# Data Generation
-This project includes utilities and scripts for automatic dataset generation. It is used in the following papers:
-- Warstadt, A., Cao, Y., Grosu, I., Peng, W., Blix, H., Nie, Y., Alsop, A., Bordia, S., Liu, H., Parrish, A. and Wang, S.F., Bowman, S.R. 2019. Investigating BERT's Knowledge of Language: Five Analysis Methods with NPIs. arXiv preprint arXiv:1909.02597.
-- Warstadt, A., Parrish, A., Liu, H., Mohananey, A., Peng, W., Wang, S. F., & Bowman, S. R. (2019). BLiMP: A Benchmark of Linguistic Minimal Pairs for English. arXiv preprint arXiv:1912.00582.
-- Jeretic, P., Warstadt, A., Bhooshan, S., & Williams, A. (2020). Are Natural Language Inference Models IMPPRESsive? Learning IMPlicature and PRESupposition. arXiv preprint arXiv:2004.03066.
+# FreqBLiMP
 
-## Usage
-To run a sample BLiMP generator from the repo root:
+FreqBLiMP is a frequency-controlled BLiMP-style minimal-pair dataset and
+generation pipeline. This repository contains the modified BLiMP generator, the
+base vocabulary, and the final head/tail/xtail datasets used in the paper.
+
+Evaluation, scoring, and paper-analysis scripts live in the companion
+`freq-blimp-eval` repository.
+
+## What Is Included
+
+- `data/freqblimp/{head,tail,xtail}/`: final paper datasets, 67 paradigms per
+  regime and 1,000 minimal pairs per paradigm.
+- `paper_scope_uids.txt`: the 67 BLiMP-paper-scope paradigms used by default.
+- `generation_projects/blimp/`: modified BLiMP generators, frequency overlay
+  guards, registry, and runner.
+- `utils/`: shared vocabulary querying, sampling, morphology, and generation
+  utilities.
+- `vocabulary.csv` and `vocab_documentation.md`: base vocabulary and feature
+  documentation.
+
+The large generated overlay files are intentionally not tracked in Git:
+`vocabulary_overlay.csv`, `vocabulary_overlay_manifest.json`, and
+`outputs/cache/vocabulary_frequency_cache.json`. Use the release/artifact bundle
+when you need to regenerate datasets with the expanded vocabulary.
+
+## Dataset Layout
+
+Each regime directory contains one `.jsonl` file and one `.manifest.json` file
+per paradigm:
+
+```text
+data/freqblimp/
+  head/
+  tail/
+  xtail/
 ```
-python -m generation_projects.blimp.adjunct_island
+
+The regimes correspond to Zipf frequency windows:
+
+- `head`: 3.5-5.5
+- `tail`: 2.4-3.2
+- `xtail`: 1.2-2.2
+
+The dataset is the 67-subtask paper-scope set. The extra generator files
+`coordinate_structure_constraint_subject_extraction` and
+`wh_questions_object_gap_long_distance` are retained for compatibility with this
+repo's generator history, but they are not part of the default paper-scope
+dataset.
+
+## Setup
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-For multi-paradigm runs and frequency-controlled sampling, use the shared runner:
+For generation with the expanded vocabulary, download the overlay artifact and
+place these files at the repo root:
+
+```text
+vocabulary_overlay.csv
+vocabulary_overlay_manifest.json
+outputs/cache/vocabulary_frequency_cache.json
 ```
-python -m generation_projects.blimp.run transitive --output-dir outputs/blimp
+
+Memory note: do not `json.load()` the overlay manifest or frequency cache in
+ad hoc scripts. They are large enough to cause avoidable memory pressure. Inspect
+them with file sizes, line counts, or narrowly scoped streaming reads.
+
+## Generate Data
+
+Generate one paradigm without the overlay:
+
+```bash
+python3 -m generation_projects.blimp.run transitive \
+  --number-to-generate 100 \
+  --output-dir outputs/local_smoke/transitive \
+  --no-trace \
+  --no-progress
 ```
 
-Operational helpers that are not paradigms live under `generation_projects/blimp/tools/`, e.g.:
+Generate the paper-scope regimes with the overlay:
+
+```bash
+UIDS="$(tr '\n' ' ' < paper_scope_uids.txt)"
+
+python3 -m generation_projects.blimp.run $UIDS \
+  --number-to-generate 1000 \
+  --seed 0 \
+  --controlled-pos noun verb adjective \
+  --zipf-min-all 3.5 \
+  --zipf-max-all 5.5 \
+  --use-overlay \
+  --overlay-path vocabulary_overlay.csv \
+  --overlay-manifest-path vocabulary_overlay_manifest.json \
+  --frequency-cache-path outputs/cache/vocabulary_frequency_cache.json \
+  --output-dir outputs/generated/head \
+  --jobs 1 \
+  --no-trace \
+  --no-progress
 ```
-python -m generation_projects.blimp.tools.feasibility_probe --output feasibility.csv
-```
 
+Change the Zipf bounds and output directory for `tail` and `xtail`.
 
-## Project Structure
-- The project contains the following packages:
-    - ```generation_projects/blimp```: BLiMP paradigms, shared runner, overlay builder, and registry.
-    - ```generation_projects/blimp/tools```: operational scripts such as feasibility probes and one-off maintenance helpers.
-    - ```mturk_qc```: older MTurk QC assets kept for reference.
-    - ```outputs```: generated datasets, overlay artifacts, and runtime caches.
-    - ```results_processing```: scripts for analyzing results and producing figures.
-    - ```utils```: shared generation/runtime code including vocabulary queries, constituent building, and sampling policy.
-- It also contains a vocabulary file and documentation of the vocabulary:
-    - ```vocabulary.csv```: the vocab file.
-    - ```vocab_documentation.md```: the vocab documentation
-    - runtime `.npy` compact vocab caches are now written under `outputs/cache/runtime_vocab/` instead of cluttering the repo root
+## Development Notes
 
+- Generated outputs, caches, logs, and overlay files are ignored by Git.
+- The tracked `data/freqblimp` directory is the curated public dataset, not a
+  scratch output directory.
+- `generation_projects/blimp/tools/` contains generator maintenance helpers such
+  as feasibility and overlay coverage probes.
+- Keep overlay-facing logic memory-conscious: prefer streaming, capped scans,
+  label-index checks, and cached indices over eager materialization.
 
-## Vocabulary
-- The vocabulary file is vocabulary.csv.
-- Each row in the .csv is a lexical item. Each column is feature encoding grammatical information about the lexical item. Detailed documentation of the columns can be found in vocab_documentation.md.
-- The following notation is used to define selectional restrictions in the ```arg_1```, ```arg_2```, and ```arg_3``` columns:
-    ```
-    <DISJUNCTION> := <CONJUNCTION> | <CONJUNCTION>;<DISJUNCTION>
-    <CONJUNCTION> := <CONDITION> | <CONDITION>^<CONJUNCTION>
-    <CONDITION> := <COLUMN>=<VALUE>
-    ```
-- In other words, the entire restriction is written in disjunctive normal form where ```;``` is used for disjunction and ```^``` is used for conjunction.
-- Example 1: ```arg_1``` of lexical item *breaking* is ```animate=1```. This means any noun appearing as the subject of *breaking* must have value ```1``` in the column ```animate```. 
-- Example 2: ```arg_1``` of lexical item *buys* is ```institution=1^sg=1;animate=1^sg=1```. This means any noun appearing as the subject of *breaking* must meet one of the following conditions: 
-    1. have value ```1``` in column ```institution``` and value ```1``` in column ```sg```, or
-    2. have value ```1``` in column ```animate``` and value ```1``` in column ```sg```. 
-- Disclaimer: As this project is under active development, data generated with different versions of the vocabulary may differ slightly.
-
-
-## Utils
-- The ```utils``` package contains the shared code for the various generation projects.
-    - ```utils.conjugate``` includes functions which conjugate verbs and add selecting auxiliaries/modals
-    - ```utils.constituent_building``` includes functions which "do syntax". The following are especially useful:
-        - ```verb_args_from_verb```: gather all arguments of a verb into a dictionary
-        - ```V_to_VP_mutate```: given a verb, modify the expression to contain the string corresponding to a full VP
-        - ```N_to_DP_mutate```: given a noun, gather all arguments and a determiner, and modify the expression to contain the string corresponding to a full DP
-    - ```utils.data_generator``` defines general classes that are instantianted by a particular generation project. The classes contain metadata fields, the main loop for a generating a dataset (```generate_paradigm```), and functions for logging and exception handling
-    - ```utils.data_type``` contains the data_type necessary for the numpy structured array data structure used in the vocabulary.
-        - if the columns of the vocabulary file are ever modified, this file must be modified to match.
-    - ```utils.string_utils``` contains functions for cleaning up generated strings (removing extra whitespace, capitalization, etc.)
-    - ```utils.vocab_sets``` contains constants for accessing commonly used sets of vocab entries. Building these constants takes about a minute at the beginning of running a generation script, but this speeds up generation of large datasets.
-    - ```utils.vocab_table``` contains functions for creating and accessing the vocabulary table
-        - ```get_all``` gathers all vocab items with a given restriction
-        - ```get_all_conjunctive``` gathers all vocab items with the given restrictions
-        
 ## Citation
-If you use the data generation project in your work, please cite the BLiMP paper:
-```
+
+If you use the generator lineage, cite BLiMP:
+
+```bibtex
 @article{warstadt2019blimp,
   title={BLiMP: A Benchmark of Linguistic Minimal Pairs for English},
-  author={Warstadt, Alex and Parrish, Alicia and Liu, Haokun and Mohananey, Anhad and Peng, Wei, and Wang, Sheng-Fu and Bowman, Samuel R},
+  author={Warstadt, Alex and Parrish, Alicia and Liu, Haokun and Mohananey, Anhad and Peng, Wei and Wang, Sheng-Fu and Bowman, Samuel R.},
   journal={arXiv preprint arXiv:1912.00582},
   year={2019}
 }

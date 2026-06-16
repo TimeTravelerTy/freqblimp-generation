@@ -5,9 +5,11 @@ from utils.vocab_sets import *
 from utils.exceptions import LexicalGapError
 
 from generation_projects.blimp.overlay_guards import (
+    animate_subject_transitive_verb_rows,
     choose_matching_row,
     choose_row_for_active_zipf,
-    verbs_with_argument_slots,
+    choose_row_for_active_zipf_by_source_lemma,
+    exclude_source_lemmas_present_in,
 )
 
 class AgreementGenerator(data_generator.BenchmarkGenerator):
@@ -19,9 +21,11 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
                          one_prefix_method=False,
                          two_prefix_method=True,
                          lexically_identical=False)
-        self.all_inanim_subj_allowing_verbs = verbs_with_argument_slots(all_inanimate_nouns, all_nouns, all_transitive_verbs)
-        self.all_anim_subj_allowing_verbs = verbs_with_argument_slots(all_animate_nouns, all_nouns, all_transitive_verbs)
-        self.all_anim_subj_verbs = np.setdiff1d(self.all_anim_subj_allowing_verbs, self.all_inanim_subj_allowing_verbs)
+        bad_subject_pool = get_all("physical", "1", get_all("animate", "0", all_common_nouns))
+        bad_subject_pool = table_setdiff1d(bad_subject_pool, get_all("animal", "1", bad_subject_pool))
+        bad_subject_pool = table_setdiff1d(bad_subject_pool, get_all("person", "1", bad_subject_pool))
+        self.bad_subject_pool = exclude_source_lemmas_present_in(bad_subject_pool, all_animate_nouns)
+        self.all_anim_subj_verbs = animate_subject_transitive_verb_rows()
         self.dets = ['the', 'some']
         self.max_sample_attempts = 512
 
@@ -33,7 +37,7 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
 
         for _ in range(self.max_sample_attempts):
             try:
-                V1 = choose_row_for_active_zipf(
+                V1 = choose_row_for_active_zipf_by_source_lemma(
                     self.all_anim_subj_verbs,
                     "verb",
                     fallback_on_empty=False,
@@ -42,21 +46,21 @@ class AgreementGenerator(data_generator.BenchmarkGenerator):
                 N1_good = N_to_DP_mutate(choose_matching_row(
                     V1,
                     "arg_1",
-                    all_nouns,
+                    all_animate_nouns,
                     "noun",
                     fallback_on_empty=False,
                     error_message="No regime-compatible animate subject",
                 ))
                 if N1_good['sg'] == '1':
                     N1_bad = N_to_DP_mutate(choose_row_for_active_zipf(
-                        get_all('sg', '1', all_inanimate_nouns),
+                        get_all('sg', '1', self.bad_subject_pool),
                         "noun",
                         fallback_on_empty=False,
                         error_message="No regime-compatible inanimate singular subject",
                     ))
                 elif N1_good['pl'] == '1':
                     N1_bad = N_to_DP_mutate(choose_row_for_active_zipf(
-                        get_all('pl', '1', all_inanimate_nouns),
+                        get_all('pl', '1', self.bad_subject_pool),
                         "noun",
                         fallback_on_empty=False,
                         error_message="No regime-compatible inanimate plural subject",

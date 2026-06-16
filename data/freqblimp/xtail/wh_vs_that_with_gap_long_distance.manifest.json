@@ -1,0 +1,47 @@
+{
+  "frequency_policy": {
+    "frequency_controlled_pos": [
+      "adjective",
+      "noun",
+      "verb"
+    ],
+    "frequency_overlay_enabled": true,
+    "frequency_seed": 0,
+    "frequency_source": "wordfreq",
+    "frequency_weighted_sampling": false,
+    "frequency_zipf_max": {
+      "adjective": 2.2,
+      "noun": 2.2,
+      "verb": 2.2
+    },
+    "frequency_zipf_min": {
+      "adjective": 1.2,
+      "noun": 1.2,
+      "verb": 1.2
+    },
+    "frequency_zipf_temp": 1.0
+  },
+  "generator": {
+    "UID": "wh_vs_that_with_gap_long_distance",
+    "field": "syntax",
+    "lexically_identical": false,
+    "linguistics_term": "filler_gap_dependency",
+    "one_prefix_method": false,
+    "simple_LM_method": true,
+    "two_prefix_method": false
+  },
+  "run": {
+    "duration_seconds": 135.81,
+    "failure_limit": 5000,
+    "failures": 304,
+    "finished_at": "2026-04-29T00:35:11.042754",
+    "generated_pairs": 1000,
+    "output_path": "outputs/strictfix_11_regen_20260428/xtail/wh_vs_that_with_gap_long_distance.jsonl",
+    "requested_pairs": 1000,
+    "started_at": "2026-04-29T00:32:55.233221"
+  },
+  "runtime": {
+    "progress_enabled": false,
+    "trace_recording_enabled": false
+  }
+}

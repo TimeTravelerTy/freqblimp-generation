@@ -1,0 +1,17 @@
+{
+  "continue_on_error": false,
+  "error_count": 0,
+  "jobs": 1,
+  "ok_count": 1,
+  "requested_uids": [
+    "distractor_agreement_rc"
+  ],
+  "results": [
+    {
+      "duration_seconds": 8554.749,
+      "output_path": "/gs/fs/tga-sip_arase/tyrone/freq-blimp/outputs/full_3regimes_701a017_20260425/xtail/distractor_agreement_relative_clause.jsonl",
+      "status": "ok",
+      "uid": "distractor_agreement_rc"
+    }
+  ]
+}

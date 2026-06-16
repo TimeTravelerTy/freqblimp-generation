@@ -1,0 +1,47 @@
+{
+  "frequency_policy": {
+    "frequency_controlled_pos": [
+      "adjective",
+      "noun",
+      "verb"
+    ],
+    "frequency_overlay_enabled": true,
+    "frequency_seed": 0,
+    "frequency_source": "wordfreq",
+    "frequency_weighted_sampling": false,
+    "frequency_zipf_max": {
+      "adjective": 5.5,
+      "noun": 5.5,
+      "verb": 5.5
+    },
+    "frequency_zipf_min": {
+      "adjective": 3.5,
+      "noun": 3.5,
+      "verb": 3.5
+    },
+    "frequency_zipf_temp": 1.0
+  },
+  "generator": {
+    "UID": "wh_questions_object_gap",
+    "field": "syntax",
+    "lexically_identical": false,
+    "linguistics_term": "filler_gap_dependency",
+    "one_prefix_method": false,
+    "simple_LM_method": true,
+    "two_prefix_method": false
+  },
+  "run": {
+    "duration_seconds": 198.76,
+    "failure_limit": 50000,
+    "failures": 0,
+    "finished_at": "2026-04-25T20:17:44.883491",
+    "generated_pairs": 1000,
+    "output_path": "/gs/fs/tga-sip_arase/tyrone/freq-blimp/outputs/full_3regimes_701a017_20260425/head/wh_questions_object_gap.jsonl",
+    "requested_pairs": 1000,
+    "started_at": "2026-04-25T20:14:26.123338"
+  },
+  "runtime": {
+    "progress_enabled": false,
+    "trace_recording_enabled": false
+  }
+}

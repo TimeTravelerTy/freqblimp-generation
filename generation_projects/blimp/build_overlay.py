@@ -1197,20 +1197,24 @@ def _apply_argument_structure_overrides(rows, entry):
     frame_types = set(entry.get("frame_types") or ())
     has_intr = "intr" in frame_types
     has_trans = "trans" in frame_types
-    if not has_intr and not has_trans:
-        return rows
     for row in rows:
         if row.get("verb") != "1":
             continue
         category = row.get("category")
-        if category == "S\\NP" and has_intr:
-            row["causative"] = "1"
-            if row.get("inchoative", "") == "":
-                row["inchoative"] = "0"
-        elif category == "(S\\NP)/NP" and has_trans:
-            row["inchoative"] = "1"
-            if row.get("causative", "") == "":
-                row["causative"] = "0"
+        if category == "S\\NP":
+            row["strict_intrans"] = "1" if has_intr and not has_trans else ("0" if has_intr else "")
+            row["strict_trans"] = ""
+            if has_intr:
+                row["causative"] = "1"
+                if row.get("inchoative", "") == "":
+                    row["inchoative"] = "0"
+        elif category == "(S\\NP)/NP":
+            row["strict_trans"] = "1" if has_trans and not has_intr else ("0" if has_trans else "")
+            row["strict_intrans"] = ""
+            if has_trans:
+                row["inchoative"] = "1"
+                if row.get("causative", "") == "":
+                    row["causative"] = "0"
     return rows
 
 

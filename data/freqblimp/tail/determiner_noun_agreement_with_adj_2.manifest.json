@@ -1,0 +1,47 @@
+{
+  "frequency_policy": {
+    "frequency_controlled_pos": [
+      "adjective",
+      "noun",
+      "verb"
+    ],
+    "frequency_overlay_enabled": true,
+    "frequency_seed": 0,
+    "frequency_source": "wordfreq",
+    "frequency_weighted_sampling": false,
+    "frequency_zipf_max": {
+      "adjective": 3.2,
+      "noun": 3.2,
+      "verb": 3.2
+    },
+    "frequency_zipf_min": {
+      "adjective": 2.4,
+      "noun": 2.4,
+      "verb": 2.4
+    },
+    "frequency_zipf_temp": 1.0
+  },
+  "generator": {
+    "UID": "determiner_noun_agreement_with_adj_2",
+    "field": "morphology",
+    "lexically_identical": true,
+    "linguistics_term": "determiner_noun_agreement",
+    "one_prefix_method": false,
+    "simple_LM_method": true,
+    "two_prefix_method": true
+  },
+  "run": {
+    "duration_seconds": 76.099,
+    "failure_limit": 50000,
+    "failures": 115,
+    "finished_at": "2026-04-25T19:15:21.743132",
+    "generated_pairs": 1000,
+    "output_path": "/gs/fs/tga-sip_arase/tyrone/freq-blimp/outputs/full_3regimes_701a017_20260425/tail/determiner_noun_agreement_with_adj_2.jsonl",
+    "requested_pairs": 1000,
+    "started_at": "2026-04-25T19:14:05.644001"
+  },
+  "runtime": {
+    "progress_enabled": false,
+    "trace_recording_enabled": false
+  }
+}
