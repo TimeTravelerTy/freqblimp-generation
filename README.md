@@ -104,6 +104,18 @@ python3 -m generation_projects.blimp.run $UIDS \
 
 Change the Zipf bounds and output directory for `tail` and `xtail`.
 
+Curated lexical pools (notably raising/control predicates) can be too small for
+a requested frequency window. The generator now emits a
+`[curated-zipf-relaxed]` line whenever it pads such a pool with the nearest
+available frequency values. Use `--strict-curated-zipf` for a run that must
+reject this padding, and audit critical predicate values with:
+
+```bash
+python3 -m generation_projects.blimp.audit_realized_critical_slots \
+  --data-root data/freqblimp \
+  --output-dir outputs/critical_slot_audit
+```
+
 ## Development Notes
 
 - `generation_projects/blimp/tools/` contains generator maintenance helpers such

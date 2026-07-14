@@ -1,4 +1,5 @@
 import json
+import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -822,12 +823,31 @@ def _curated_rows_for_expression_families(table,
                                           expressions: Sequence[str],
                                           controlled_pos: str,
                                           expand_inflections: bool=False,
-                                          minimum_candidates: int=_CURATED_ZIPF_MIN_CANDIDATES):
+                                          minimum_candidates: int=_CURATED_ZIPF_MIN_CANDIDATES,
+                                          pool_name: str="curated_pool"):
     rows = _rows_for_expression_families(
         table,
         expressions,
         expand_inflections=expand_inflections,
     )
+    policy = get_active_policy()
+    strict_rows = filter_rows_for_active_zipf(
+        rows,
+        controlled_pos,
+        fallback_on_empty=False,
+    )
+    target_count = min(max(int(minimum_candidates), 0), len(rows))
+    if len(strict_rows) < target_count:
+        lower, upper = policy.bounds_for(controlled_pos) if policy is not None else (None, None)
+        if lower is not None or upper is not None:
+            action = "strict_only" if os.environ.get("FREQBLIMP_STRICT_CURATED_ZIPF", "0") == "1" else "nearest_frequency_padding"
+            print(
+                "[freqblimp][curated-zipf-relaxed] pool=%s pos=%s requested=[%s,%s] strict=%d required=%d raw=%d action=%s"
+                % (pool_name, controlled_pos, lower, upper, len(strict_rows), target_count, len(rows), action),
+                flush=True,
+            )
+        if os.environ.get("FREQBLIMP_STRICT_CURATED_ZIPF", "0") == "1":
+            return strict_rows
     return filter_rows_for_active_zipf(
         rows,
         controlled_pos,
@@ -896,6 +916,7 @@ def subject_raising_verb_rows():
         _SUBJECT_RAISING_VERBS,
         "verb",
         expand_inflections=True,
+        pool_name="subject_raising_verbs",
     )
 
 
@@ -906,6 +927,7 @@ def control_subject_verb_rows():
         _CONTROL_SUBJECT_VERBS,
         "verb",
         expand_inflections=True,
+        pool_name="control_subject_verbs",
     )
 
 
@@ -916,6 +938,7 @@ def object_raising_verb_rows():
         _OBJECT_RAISING_VERBS,
         "verb",
         expand_inflections=True,
+        pool_name="object_raising_verbs",
     )
 
 
@@ -926,6 +949,7 @@ def control_object_verb_rows():
         _CONTROL_OBJECT_VERBS,
         "verb",
         expand_inflections=True,
+        pool_name="control_object_verbs",
     )
 
 
@@ -936,17 +960,23 @@ def subject_raising_adjective_rows():
     is the single source of truth for both generators and the overlay pipeline.
     """
     rows = adjective_rows_for_category("Adj_raising_subj")
-    return _curated_rows_for_expression_families(rows, _RAISING_ADJECTIVES, "adjective")
+    return _curated_rows_for_expression_families(
+        rows, _RAISING_ADJECTIVES, "adjective", pool_name="subject_raising_adjectives"
+    )
 
 
 def control_subject_adjective_rows():
     rows = adjective_rows_for_category("Adj_control_subj")
-    return _curated_rows_for_expression_families(rows, _CONTROL_ADJECTIVES, "adjective")
+    return _curated_rows_for_expression_families(
+        rows, _CONTROL_ADJECTIVES, "adjective", pool_name="control_subject_adjectives"
+    )
 
 
 def tough_adjective_rows():
     rows = adjective_rows_for_category("Adj_tough")
-    return _curated_rows_for_expression_families(rows, _TOUGH_ADJECTIVES, "adjective")
+    return _curated_rows_for_expression_families(
+        rows, _TOUGH_ADJECTIVES, "adjective", pool_name="tough_adjectives"
+    )
 
 
 def clausal_it_adjective_rows():
@@ -957,6 +987,7 @@ def clausal_it_adjective_rows():
         _CLAUSAL_IT_ADJECTIVES,
         "adjective",
         minimum_candidates=_CURATED_ZIPF_MIN_CANDIDATES,
+        pool_name="clausal_it_adjectives",
     )
 
 
@@ -977,6 +1008,7 @@ def existential_subject_raising_verb_rows():
         _EXISTENTIAL_SUBJECT_RAISING_VERBS,
         "verb",
         expand_inflections=True,
+        pool_name="existential_subject_raising_verbs",
     )
 
 
@@ -986,6 +1018,7 @@ def existential_subject_raising_adjective_rows():
         rows,
         _EXISTENTIAL_SUBJECT_RAISING_ADJECTIVES,
         "adjective",
+        pool_name="existential_subject_raising_adjectives",
     )
 
 

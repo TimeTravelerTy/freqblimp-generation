@@ -72,6 +72,7 @@ def _runtime_config_from_args(args):
         "overlay_path": args.overlay_path,
         "overlay_manifest_path": args.overlay_manifest_path,
         "frequency_cache_path": args.frequency_cache_path,
+        "strict_curated_zipf": args.strict_curated_zipf,
         "record_trace": not args.no_trace,
         "show_progress": not args.no_progress and args.jobs == 1,
         "continue_on_error": args.continue_on_error,
@@ -83,6 +84,7 @@ def _runtime_config_from_args(args):
 def _apply_runtime_env(config):
     os.environ["FREQBLIMP_USE_OVERLAY"] = "1" if config["use_overlay"] else "0"
     os.environ["FREQBLIMP_SHOW_PROGRESS"] = "1" if config["show_progress"] else "0"
+    os.environ["FREQBLIMP_STRICT_CURATED_ZIPF"] = "1" if config["strict_curated_zipf"] else "0"
     if config["overlay_path"]:
         os.environ["FREQBLIMP_VOCAB_OVERLAY"] = config["overlay_path"]
     if config["overlay_manifest_path"]:
@@ -253,6 +255,11 @@ def build_parser():
     parser.add_argument("--overlay-path", default="vocabulary_overlay.csv")
     parser.add_argument("--overlay-manifest-path", default="vocabulary_overlay_manifest.json")
     parser.add_argument("--frequency-cache-path", default="outputs/cache/vocabulary_frequency_cache.json")
+    parser.add_argument(
+        "--strict-curated-zipf",
+        action="store_true",
+        help="Reject curated-pool nearest-frequency padding instead of silently using it.",
+    )
     parser.add_argument("--jobs", type=int, default=1)
     parser.add_argument("--no-trace", action="store_true")
     parser.add_argument("--no-progress", action="store_true")
