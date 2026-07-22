@@ -20,6 +20,7 @@ import argparse
 import csv
 import json
 import math
+import re
 import sys
 from collections import defaultdict
 from dataclasses import dataclass
@@ -85,6 +86,23 @@ def _common_prefix_length(left: str, right: str) -> int:
     return index
 
 
+def _critical_starts(good: str, bad: str, good_end: int, bad_end: int) -> tuple[int, int]:
+    """Find the first non-shared predicate word, at a word rather than character boundary."""
+    good_words = list(re.finditer(r"\S+", good[:good_end]))
+    bad_words = list(re.finditer(r"\S+", bad[:bad_end]))
+    for index, (good_word, bad_word) in enumerate(zip(good_words, bad_words)):
+        if good_word.group() != bad_word.group():
+            good_start, bad_start = good_word.start(), bad_word.start()
+            # Include a shared separating space in the locus.  This makes the
+            # requested first-character assignment robust when a BPE token
+            # merges that space with the predicate.
+            while good_start > 0 and bad_start > 0 and good[good_start - 1].isspace() and bad[bad_start - 1].isspace():
+                good_start -= 1
+                bad_start -= 1
+            return good_start, bad_start
+    raise ValueError("paired prefixes contain no word-level predicate difference")
+
+
 def _layout_pair(uid: str, good: str, bad: str) -> tuple[SpanLayout, SpanLayout, str, str]:
     """Recover the one replaced predicate and fixed licensing window by offsets."""
     try:
@@ -100,8 +118,7 @@ def _layout_pair(uid: str, good: str, bad: str) -> tuple[SpanLayout, SpanLayout,
     bad_critical_end = bad.find(marker, prefix_end)
     if prefix_end == 0 or good_critical_end < 0 or bad_critical_end < 0 or prefix_end >= good_critical_end or prefix_end >= bad_critical_end:
         raise ValueError(f"{uid}: pair is not one nonempty replacement: {good!r} / {bad!r}")
-    # The lexical predicate begins exactly where the shared prefix ends.  Its
-    # end must be the first character of the prescribed continuation.
+    # Its end must be the first character of the prescribed continuation.
     if not good[good_critical_end:].startswith(marker):
         raise ValueError(
             f"{uid}: good suffix does not begin with {marker!r}: {good[good_critical_end:]!r}"
@@ -112,16 +129,23 @@ def _layout_pair(uid: str, good: str, bad: str) -> tuple[SpanLayout, SpanLayout,
         )
     if good[good_critical_end:] != bad[bad_critical_end:]:
         raise ValueError(f"{uid}: continuation is not string-identical after the critical predicate")
-    good_layout = SpanLayout(prefix_end, prefix_end, good_critical_end, good_critical_end + len(marker))
-    bad_layout = SpanLayout(prefix_end, prefix_end, bad_critical_end, bad_critical_end + len(marker))
-    good_lemma = good[prefix_end:good_critical_end].strip().lower()
-    bad_lemma = bad[prefix_end:bad_critical_end].strip().lower()
+    good_start, bad_start = _critical_starts(good, bad, good_critical_end, bad_critical_end)
+    good_layout = SpanLayout(prefix_end, good_start, good_critical_end, good_critical_end + len(marker))
+    bad_layout = SpanLayout(prefix_end, bad_start, bad_critical_end, bad_critical_end + len(marker))
+    good_lemma = good[good_start:good_critical_end].strip().lower()
+    bad_lemma = bad[bad_start:bad_critical_end].strip().lower()
     if not good_lemma or not bad_lemma:
         raise ValueError(f"{uid}: empty critical predicate after layout recovery")
     return good_layout, bad_layout, good_lemma, bad_lemma
 
 
-def _read_items(data_root: Path, uids: Sequence[str], regimes: Sequence[str], expected_pairs: int | None) -> list[Item]:
+def _read_items(
+    data_root: Path,
+    uids: Sequence[str],
+    regimes: Sequence[str],
+    expected_pairs: int | None,
+    limit_per_dataset: int | None,
+) -> list[Item]:
     items: list[Item] = []
     for regime in regimes:
         for uid in uids:
@@ -138,15 +162,16 @@ def _read_items(data_root: Path, uids: Sequence[str], regimes: Sequence[str], ex
                     bad = record.get("sentence_bad")
                     if not isinstance(good, str) or not isinstance(bad, str):
                         raise ValueError(f"{path}:{line_number}: missing sentence_good/sentence_bad")
+                    count += 1
+                    if limit_per_dataset is not None and count > limit_per_dataset:
+                        continue
                     good_layout, bad_layout, good_lemma, bad_lemma = _layout_pair(uid, good, bad)
                     pair_id = str(record.get("pairID", line_number - 1))
-                    items.append(
-                        Item(uid, regime, pair_id, good, bad, good_layout, bad_layout, good_lemma, bad_lemma)
-                    )
-                    count += 1
+                    items.append(Item(uid, regime, pair_id, good, bad, good_layout, bad_layout, good_lemma, bad_lemma))
             if expected_pairs is not None and count != expected_pairs:
                 raise ValueError(f"{path}: expected {expected_pairs} pairs, found {count}")
-            print(f"[Data] {regime}/{uid}: {count} pairs")
+            selected = min(count, limit_per_dataset) if limit_per_dataset is not None else count
+            print(f"[Data] {regime}/{uid}: {selected}/{count} pairs selected")
     return items
 
 
@@ -192,8 +217,12 @@ def _score_text_batch(scorer, texts: Sequence[str], layouts: Sequence[SpanLayout
                 continue
             token_start, token_end = (int(value) for value in offsets[row_index, position + 1].tolist())
             if token_end <= token_start:
-                raise RuntimeError("Encountered a scored token with no character offset.")
-            sums[layout.category(token_start)] += float(token_logprobs[row_index, position])
+                # A scored EOS/special token has no raw-text characters. Its
+                # probability is conditioned on the complete sentence, so it
+                # belongs to the suffix/remainder rather than the prefix.
+                sums["remainder"] += float(token_logprobs[row_index, position])
+            else:
+                sums[layout.category(token_start)] += float(token_logprobs[row_index, position])
         sums["total_lp"] = sum(sums.values())
         results.append(sums)
     return results
@@ -353,12 +382,15 @@ def main() -> None:
     parser.add_argument("--dtype", default="bfloat16", choices=("auto", "bfloat16", "float16", "float32"))
     parser.add_argument("--device-map", default="auto")
     parser.add_argument("--expected-pairs", type=int, default=1000)
+    parser.add_argument("--limit-per-dataset", type=int, default=None)
     parser.add_argument("--max-residual", type=float, default=1e-4)
     parser.add_argument("--dry-run", action="store_true", help="Validate layouts/data without loading a model.")
     args = parser.parse_args()
     if args.batch_size < 1:
         parser.error("--batch-size must be positive")
-    items = _read_items(args.data_root, args.uids, args.regimes, args.expected_pairs)
+    if args.limit_per_dataset is not None and args.limit_per_dataset < 1:
+        parser.error("--limit-per-dataset must be positive")
+    items = _read_items(args.data_root, args.uids, args.regimes, args.expected_pairs, args.limit_per_dataset)
     if args.dry_run:
         print(f"[Dry run] validated {len(items)} pairs with nonempty critical spans.")
         return
@@ -372,7 +404,10 @@ def main() -> None:
             model_name=model,
             dtype=args.dtype,
             device_map=args.device_map,
-            padding_side="left",
+            # Right padding keeps identical shared prefixes at identical
+            # absolute positions even when the two predicate strings differ
+            # in token length.
+            padding_side="right",
         )
         rows = _score_items(
             scorer, model, items, batch_size=args.batch_size,
