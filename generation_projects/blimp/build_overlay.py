@@ -129,8 +129,36 @@ VERB_FRAME_OVERRIDES = {
     "bulge": {"remove": {"trans"}, "add": set()},
     "cascade": {"remove": {"trans"}, "add": set()},
     "guzzle": {"remove": set(), "add": {"intr"}},
+    # ``nosh`` also has a genuine consumption-object use (nosh a sandwich),
+    # which is the relevant alternation for drop_argument.
+    "nosh": {"remove": set(), "add": {"trans"}},
     "redecorate": {"remove": set(), "add": {"intr"}},
 }
+# The ordinary overlay deduplication is deliberately surface-based.  These
+# four vetted candidates are the narrow exception: their noun homographs
+# should not suppress independent verb rows.  Row-signature deduplication
+# below still prevents duplicate lexical entries of the same syntactic type.
+VERB_NOUN_HOMOGRAPH_ALLOWLIST = frozenset({"nosh", "quaff", "saute", "winnow"})
+# A small, manually vetted extension of the WordNet-derived inventory for
+# object-drop candidates.  These entries have clear single-event transitive
+# and objectless readings; they are kept here rather than in the ignored
+# inventory artifact so that an overlay rebuild is reproducible.
+CURATED_VERB_FRAME_ADDITIONS = {
+    "bootleg": {"intr", "trans"},
+    "busk": {"intr", "trans"},
+    "mooch": {"intr", "trans"},
+    "panhandle": {"intr", "trans"},
+    "strum": {"intr", "trans"},
+    "thresh": {"intr", "trans"},
+}
+# Keep the resulting source lemmas in a rebuilt overlay even when its global
+# verb limit is smaller than the full inventory.  This is deliberately
+# restricted to the curated drop-argument expansion, not a generic priority
+# mechanism for arbitrary overlay candidates.
+DROP_ARGUMENT_VERB_PRIORITY = frozenset({
+    "bootleg", "braise", "busk", "croon", "mooch", "nosh", "panhandle",
+    "purloin", "quaff", "saute", "strum", "thresh", "winnow",
+})
 HEAD_AMBIGUOUS_INTRANSITIVE_CLASSES = {
     # High-frequency denominal/deadjectival uses whose WordNet verb sense is
     # real but too fringe for simple BLiMP intransitive templates.
@@ -1036,6 +1064,17 @@ def _load_verb_inventory(path):
                 frame_values[frame_type].add(str(frame["particle"]).strip().lower())
         entries.append({"lemma": lemma, "frame_types": frame_types})
         entries[-1]["frame_values"] = {key: tuple(sorted(values)) for key, values in frame_values.items()}
+    entries_by_lemma = {entry["lemma"]: entry for entry in entries}
+    for lemma, frame_types in CURATED_VERB_FRAME_ADDITIONS.items():
+        entry = entries_by_lemma.get(lemma)
+        if entry is None:
+            entries.append({
+                "lemma": lemma,
+                "frame_types": set(frame_types),
+                "frame_values": {},
+            })
+        else:
+            entry["frame_types"].update(frame_types)
     return entries
 
 
@@ -1365,13 +1404,22 @@ def build_overlay(args):
         intr_particle_template_index = _multiword_verb_template_index(_BASE_ROWS, "S\\NP")
         trans_particle_template_index = _multiword_verb_template_index(_BASE_ROWS, "(S\\NP)/NP")
         verb_entries = _load_verb_inventory(args.verb_inventory_path)
-        rng.shuffle(verb_entries)
+        priority_entries = [
+            entry for entry in verb_entries
+            if entry["lemma"] in DROP_ARGUMENT_VERB_PRIORITY
+        ]
+        other_verb_entries = [
+            entry for entry in verb_entries
+            if entry["lemma"] not in DROP_ARGUMENT_VERB_PRIORITY
+        ]
+        rng.shuffle(other_verb_entries)
+        verb_entries = priority_entries + other_verb_entries
         admitted = 0
         for entry in verb_entries:
             if admitted >= args.verb_limit:
                 break
             lemma = entry["lemma"]
-            if lemma in existing_expressions:
+            if lemma in existing_expressions and lemma not in VERB_NOUN_HOMOGRAPH_ALLOWLIST:
                 _record_rejection(audit, "verb", lemma, "duplicate_expression")
                 continue
             blocked_match = _match_blocked_lemma(lemma, vulgar_blocklist)

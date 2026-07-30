@@ -8,6 +8,7 @@ from typing import Iterable, Optional, Sequence
 import numpy as np
 import wn
 
+from utils.frequency import zipf_for_expression
 from utils.vocab_sets import all_nominals
 from utils.exceptions import LexicalGapError
 from utils.randomize import get_active_policy, uniform_choice
@@ -221,6 +222,14 @@ _DROP_ARGUMENT_GOOD_VERBS = (
     "shower", "sing", "sketch", "skim", "smoke", "study",
     "sweep", "teach", "trade", "train", "type",
     "vacuum", "wash", "watch", "weave", "weed", "whittle", "write",
+    # Additional verbs whose objectless use remains natural in short episodic
+    # clauses, rather than depending only on a habitual/professional reading.
+    "babysit", "backfill", "bootleg", "braise", "busk", "cadge", "croon",
+    "daub", "disinfect", "embezzle", "excavate", "filch", "garnish",
+    "insulate", "lubricate", "mooch", "mulch", "nosh", "panhandle",
+    "plagiarize", "plunder", "proofread", "purloin", "quaff", "saute",
+    "smuggle", "sterilize", "stockpile", "strum", "thieve", "thresh",
+    "transcribe", "tweeze", "winnow",
 )
 
 _DROP_ARGUMENT_BAD_VERBS = (
@@ -443,6 +452,11 @@ def _source_lemma_for_row(row) -> str:
     return (root or str(row["expression"]).strip()).replace("_", " ")
 
 
+def source_lemma_for_row(row) -> str:
+    """Return the normalized source lemma used for pool-balancing decisions."""
+    return _source_lemma_for_row(row)
+
+
 @lru_cache(maxsize=1)
 def _transitive_source_lemmas():
     transitive_rows = get_all("category", "(S\\NP)/NP", get_all("verb", "1"))
@@ -659,6 +673,68 @@ def filter_rows_for_active_zipf(table, controlled_pos: str, fallback_on_empty: b
     return filtered
 
 
+def filter_rows_for_active_source_lemma_zipf(table,
+                                             controlled_pos: str,
+                                             fallback_on_empty: bool=False):
+    """Apply the active Zipf window to source lemmas as well as word forms.
+
+    Most generation code intentionally controls realised expressions.  For
+    ``drop_argument``, however, the experimental claim concerns lexical
+    licensing knowledge.  Requiring the source lemma to occupy the regime
+    prevents a frequent lemma's rare inflection from masquerading as a rare
+    lexical item.
+    """
+    policy = get_active_policy()
+    if policy is None or len(table) == 0:
+        return table
+    if controlled_pos not in getattr(policy, "controlled_pos_set", set()):
+        return table
+    lower, upper = policy.bounds_for(controlled_pos)
+    if lower is None and upper is None:
+        return table
+    cache_key = (
+        _table_cache_key(table),
+        "source_lemma:%s" % controlled_pos,
+        lower,
+        upper,
+        bool(fallback_on_empty),
+        None,
+    )
+    cached = _ZIPF_FILTER_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    zipf_values = np.fromiter(
+        (zipf_for_expression(_source_lemma_for_row(row)) for row in table),
+        dtype=float,
+        count=len(table),
+    )
+    mask = np.ones(len(table), dtype=bool)
+    if lower is not None:
+        mask &= zipf_values >= lower
+    if upper is not None:
+        mask &= zipf_values <= upper
+    filtered = table[mask]
+    if len(filtered) == 0 and fallback_on_empty:
+        filtered = table
+    _ZIPF_FILTER_CACHE[cache_key] = filtered
+    return filtered
+
+
+def filter_rows_by_zipf_distance(table, target_zipf: float, maximum_distance: float):
+    """Keep rows whose realised expression Zipf is close to ``target_zipf``.
+
+    This is deliberately independent of the active regime filter: callers use
+    it after applying that filter when a minimal-pair contrast must avoid a
+    good-side versus bad-side frequency advantage.
+    """
+    if len(table) == 0:
+        return table
+    zipf_values = get_table_zipf_expression(table)
+    maximum_distance = max(float(maximum_distance), 0.0)
+    mask = np.abs(zipf_values - float(target_zipf)) <= maximum_distance
+    return table[mask]
+
+
 def choose_row_for_active_zipf(table,
                                controlled_pos: str,
                                fallback_on_empty: bool=False,
@@ -681,7 +757,9 @@ def choose_row_for_active_zipf_by_source_lemma(table,
                                                fallback_on_empty: bool=False,
                                                avoid=None,
                                                error_message: Optional[str]=None,
-                                               minimum_candidates: Optional[int]=None):
+                                               minimum_candidates: Optional[int]=None,
+                                               lemma_counts=None,
+                                               lemma_count_slack: int=0):
     candidates = filter_rows_for_active_zipf(
         table,
         controlled_pos,
@@ -699,6 +777,13 @@ def choose_row_for_active_zipf_by_source_lemma(table,
         if len(candidates) == 0:
             raise LexicalGapError(error_message or "No %s candidates available after avoid filter" % controlled_pos)
     lemmas = sorted({_source_lemma_for_row(row).lower() for row in candidates})
+    if lemma_counts is not None and lemmas:
+        minimum_count = min(int(lemma_counts.get(lemma, 0)) for lemma in lemmas)
+        maximum_count = minimum_count + max(int(lemma_count_slack), 0)
+        lemmas = [
+            lemma for lemma in lemmas
+            if int(lemma_counts.get(lemma, 0)) <= maximum_count
+        ]
     lemma = uniform_choice(np.asarray(lemmas, dtype=object))
     lemma_rows = candidates[np.fromiter(
         (_source_lemma_for_row(row).lower() == lemma for row in candidates),
@@ -1112,7 +1197,9 @@ def drop_argument_good_verb_rows():
         _DROP_ARGUMENT_GOOD_VERBS,
         expand_inflections=True,
     )
-    return exclude_low_quality_overlay_verb_lemmas(get_all("ing", "0", get_all("en", "0", rows)))
+    rows = exclude_low_quality_overlay_verb_lemmas(get_all("ing", "0", get_all("en", "0", rows)))
+    rows = exclude_agentive_subject_mismatch_rows(rows)
+    return filter_rows_for_active_source_lemma_zipf(rows, "verb", fallback_on_empty=False)
 
 
 def drop_argument_bad_verb_rows():
@@ -1121,7 +1208,8 @@ def drop_argument_bad_verb_rows():
         _DROP_ARGUMENT_BAD_VERBS,
         expand_inflections=True,
     )
-    return get_all("ing", "0", get_all("en", "0", rows))
+    rows = get_all("ing", "0", get_all("en", "0", rows))
+    return filter_rows_for_active_source_lemma_zipf(rows, "verb", fallback_on_empty=False)
 
 
 def animate_subject_transitive_verb_rows():
